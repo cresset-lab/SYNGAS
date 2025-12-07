@@ -1,0 +1,15 @@
+==========================================
+Halmos Equivalence Proof Summary
+==========================================
+Test File: test/GeneralizedEquivalenceTest.t.sol
+Timestamp: Sun Dec  7 12:36:59 EST 2025
+------------------------------------------
+Total Tests: 0
+0
+Passed: 0
+0
+Failed: 0
+0
+Counterexamples Found: 0
+0
+==========================================

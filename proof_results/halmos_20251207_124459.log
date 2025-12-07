@@ -1,0 +1,312 @@
+Compiling 31 files with Solc 0.8.30
+Solc 0.8.30 finished in 1.78s
+Compiler run successful with warnings:
+Warning (2072): Unused local variable.
+  --> test/EquivalenceTest.t.sol:94:9:
+   |
+94 |         uint256 wrong_optimization = (n * n) / 2;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Warning (5667): Unused try/catch parameter. Remove or comment out the variable name to silence this warning.
+  --> test/EquivalenceTest.t.sol:96:44:
+   |
+96 |         try original.sumSeries(n) returns (uint256 res) {
+   |                                            ^^^^^^^^^^^
+
+Warning (2018): Function state mutability can be restricted to pure
+  --> src/Optimized.sol:46:5:
+   |
+46 |     function recursiveComputation(uint256 n) public returns (uint256) {
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to pure
+  --> src/Original.sol:38:5:
+   |
+38 |     function recursiveComputation(uint256 n) public returns (uint256) {
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to view
+  --> test/EquivalenceTest.t.sol:89:5:
+   |
+89 |     function check_bug_detection(uint256 n) public {
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to view
+  --> test/GeneralizedEquivalenceTest.t.sol:40:5:
+   |
+40 |     function assertStateEquivalence() internal {
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+note[unaliased-plain-import]: use named imports '{A, B}' or alias 'import ".." as X'
+ --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoEquivalenceTest.t.sol:6:8
+  |
+6 | import "halmos-cheatcodes/SymTest.sol";
+  |        -------------------------------
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unaliased-plain-import
+
+note[unaliased-plain-import]: use named imports '{A, B}' or alias 'import ".." as X'
+ --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:4:8
+  |
+4 | import "halmos-cheatcodes/SymTest.sol";
+  |        -------------------------------
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unaliased-plain-import
+
+note[unaliased-plain-import]: use named imports '{A, B}' or alias 'import ".." as X'
+ --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:5:8
+  |
+5 | import "forge-std/Test.sol";
+  |        --------------------
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unaliased-plain-import
+
+note[unaliased-plain-import]: use named imports '{A, B}' or alias 'import ".." as X'
+ --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/EquivalenceTest.t.sol:4:8
+  |
+4 | import "halmos-cheatcodes/SymTest.sol";
+  |        -------------------------------
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unaliased-plain-import
+
+note[unaliased-plain-import]: use named imports '{A, B}' or alias 'import ".." as X'
+ --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/EquivalenceTest.t.sol:5:8
+  |
+5 | import "forge-std/Test.sol";
+  |        --------------------
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unaliased-plain-import
+
+note[mixed-case-variable]: mutable variables should use mixedCase
+  --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/src/Optimized.sol:33:17
+   |
+33 |         uint256 numberArray_len = numberArray.length;
+   |                 ---------------
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-variable
+
+note[mixed-case-variable]: mutable variables should use mixedCase
+  --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/src/Optimized.sol:64:17
+   |
+64 |         uint256 dataStrings_len = dataStrings.length;
+   |                 ---------------
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-variable
+
+note[mixed-case-function]: function names should use mixedCase
+  --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/EquivalenceTest.t.sol:54:14
+   |
+54 |     function check_equivalence_sumSeries(uint256 n) public {
+   |              ---------------------------
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+  --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/EquivalenceTest.t.sol:89:14
+   |
+89 |     function check_bug_detection(uint256 n) public {
+   |              -------------------
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-variable]: mutable variables should use mixedCase
+  --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/EquivalenceTest.t.sol:94:17
+   |
+94 |         uint256 wrong_optimization = (n * n) / 2;
+   |                 ------------------
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-variable
+
+note[unaliased-plain-import]: use named imports '{A, B}' or alias 'import ".." as X'
+ --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoEquivalenceTest.t.sol:7:8
+  |
+7 | import "forge-std/Test.sol";
+  |        --------------------
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unaliased-plain-import
+
+note[mixed-case-function]: function names should use mixedCase
+  --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoEquivalenceTest.t.sol:38:14
+   |
+38 |     function check_function_equivalence(
+   |              --------------------------
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+  --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:90:14
+   |
+90 |     function check_function_equivalence(
+   |              --------------------------
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[unaliased-plain-import]: use named imports '{A, B}' or alias 'import ".." as X'
+ --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoGeneratedTest.t.sol:3:8
+  |
+3 | import "halmos-cheatcodes/SymTest.sol";
+  |        -------------------------------
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unaliased-plain-import
+
+note[unaliased-plain-import]: use named imports '{A, B}' or alias 'import ".." as X'
+ --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoGeneratedTest.t.sol:4:8
+  |
+4 | import "forge-std/Test.sol";
+  |        --------------------
+  |
+  = help: https://book.getfoundry.sh/reference/forge/forge-lint#unaliased-plain-import
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:120:14
+    |
+120 |     function check_equivalence_complexNumberComputation(uint256 multiplier) public {
+    |              ------------------------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:128:14
+    |
+128 |     function check_equivalence_concatenateStrings(uint256 times, string memory baseString) public {
+    |              ------------------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:137:14
+    |
+137 |     function check_equivalence_recursiveComputation(uint256 n) public {
+    |              --------------------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:145:14
+    |
+145 |     function check_equivalence_updateDataStrings(uint256 iterations, string memory newString) public {
+    |              -----------------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:154:14
+    |
+154 |     function check_equivalence_fuzzTest(uint256 loops, uint256 modValue) public {
+    |              --------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:168:14
+    |
+168 |     function check_equivalence_counter() public {
+    |              -------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:175:14
+    |
+175 |     function check_equivalence_dataStrings(uint256 index) public {
+    |              -----------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:184:14
+    |
+184 |     function check_equivalence_numberArray(uint256 index) public {
+    |              -----------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:193:14
+    |
+193 |     function check_equivalence_concatenatedStrings(uint256 key) public {
+    |              -------------------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/GeneralizedEquivalenceTest.t.sol:208:14
+    |
+208 |     function check_equivalence_sequential_operations(
+    |              ---------------------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+  --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoGeneratedTest.t.sol:17:14
+   |
+17 |     function check_equivalence_complexNumberComputation(uint256 multiplier) public {
+   |              ------------------------------------------
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+  --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoGeneratedTest.t.sol:38:14
+   |
+38 |     function check_equivalence_concatenateStrings(uint256 times, string memory baseString) public {
+   |              ------------------------------------
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+  --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoGeneratedTest.t.sol:59:14
+   |
+59 |     function check_equivalence_concatenatedStrings(uint256 arg0) public {
+   |              -------------------------------------
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+  --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoGeneratedTest.t.sol:80:14
+   |
+80 |     function check_equivalence_counter() public {
+   |              -------------------------
+   |
+   = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoGeneratedTest.t.sol:101:14
+    |
+101 |     function check_equivalence_dataStrings(uint256 arg0) public {
+    |              -----------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoGeneratedTest.t.sol:122:14
+    |
+122 |     function check_equivalence_fuzzTest(uint256 loops, uint256 modValue) public {
+    |              --------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoGeneratedTest.t.sol:143:14
+    |
+143 |     function check_equivalence_numberArray(uint256 arg0) public {
+    |              -----------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoGeneratedTest.t.sol:164:14
+    |
+164 |     function check_equivalence_recursiveComputation(uint256 n) public {
+    |              --------------------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+note[mixed-case-function]: function names should use mixedCase
+   --> /Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoGeneratedTest.t.sol:185:14
+    |
+185 |     function check_equivalence_updateDataStrings(uint256 iterations, string memory newString) public {
+    |              -----------------------------------
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#mixed-case-function
+
+ERROR    No tests with --match-contract '^/Users/sourenakhanzadeh/programming/thesis/formal_verification/halmosProj/test/AutoEquivalenceTest.t.sol$' --match-test '^(check|invariant)_.*'                                                                                                                                                                                                                                                                

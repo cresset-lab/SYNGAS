@@ -1,0 +1,20 @@
+{
+  "project_root": ".",
+  "test_file": "test/GeneralizedEquivalenceTest.t.sol",
+  "generate_tests": false,
+  "halmos_args": [
+    "--solver-timeout-assertion", "0",
+    "--solver-timeout-unknown", "0"
+  ],
+  "output_dir": "proof_results",
+  "constraints": {
+    "max_loop_iterations": 100,
+    "max_string_length": 100,
+    "max_recursive_depth": 50
+  },
+  "contracts": {
+    "original": "src/Original.sol",
+    "optimized": "src/Optimized.sol"
+  }
+}
+
