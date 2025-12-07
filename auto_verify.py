@@ -82,9 +82,30 @@ class ContractAnalyzer:
         # Try to use ABI first (more accurate)
         if use_abi:
             try:
-                return self._extract_from_abi()
-            except:
-                pass  # Fall back to source parsing
+                abi_funcs = self._extract_from_abi()
+                # Validate: check if ABI functions match source functions
+                # This prevents using wrong artifacts when multiple contracts have same name
+                source_funcs = self._extract_from_source()
+                abi_names = {f['name'] for f in abi_funcs}
+                source_names = {f['name'] for f in source_funcs}
+                
+                # If ABI gives us completely different functions, use source instead
+                if abi_names and source_names:
+                    overlap = abi_names & source_names
+                    # If less than 50% overlap, likely wrong artifact
+                    if len(overlap) < min(len(abi_names), len(source_names)) * 0.5:
+                        # ABI found wrong contract - use source parsing
+                        return source_funcs
+                
+                # If ABI has functions and source doesn't, trust ABI
+                if abi_funcs and not source_funcs:
+                    return abi_funcs
+                
+                # Prefer ABI if it matches source (more accurate parameter types)
+                return abi_funcs if abi_funcs else source_funcs
+            except Exception as e:
+                # Fall back to source parsing on any error
+                pass
         
         # Fall back to source code parsing
         return self._extract_from_source()
@@ -93,39 +114,83 @@ class ContractAnalyzer:
         """Extract functions from ABI (requires forge build)."""
         contract_name = self.extract_contract_name()
         
-        # Try different artifact path formats
-        possible_paths = [
-            Path(f"out/{contract_name}.sol/{contract_name}.json"),
-            Path(f"out/{self.contract_path.stem}.sol/{contract_name}.json"),
-        ]
-        
-        # Also try to find by searching out directory
+        # Try to find artifact based on source file path
+        # Forge creates artifacts in out/<source_file_stem>.sol/<contract_name>.json
         artifact_path = None
         out_dir = Path("out")
+        
         if out_dir.exists():
-            for sol_dir in out_dir.iterdir():
-                if sol_dir.is_dir():
-                    json_file = sol_dir / f"{contract_name}.json"
-                    if json_file.exists():
-                        artifact_path = json_file
-                        break
+            # First, try exact match based on source file path
+            source_stem = self.contract_path.stem  # e.g., "Original" from "Original.sol"
+            
+            # Try: out/<source_stem>.sol/<contract_name>.json
+            possible_dir = out_dir / f"{source_stem}.sol"
+            if possible_dir.exists():
+                json_file = possible_dir / f"{contract_name}.json"
+                if json_file.exists():
+                    artifact_path = json_file
+            
+            # If not found, search for any directory containing the contract name
+            if not artifact_path:
+                # Build relative path from project root to find matching artifact
+                try:
+                    project_root = Path.cwd()
+                    rel_path = self.contract_path.relative_to(project_root)
+                    # For benchmark/01_Arithmetic_Unchecked/Original.sol
+                    # Look for out/benchmark/01_Arithmetic_Unchecked/Original.sol/Original.json
+                    artifact_dir = out_dir / rel_path.with_suffix('')
+                    if artifact_dir.exists():
+                        json_file = artifact_dir / f"{contract_name}.json"
+                        if json_file.exists():
+                            artifact_path = json_file
+                except:
+                    pass
+            
+            # Fallback: search all directories (less precise)
+            if not artifact_path:
+                for sol_dir in out_dir.iterdir():
+                    if sol_dir.is_dir():
+                        json_file = sol_dir / f"{contract_name}.json"
+                        if json_file.exists():
+                            # Prefer directories that match source file name
+                            if source_stem in sol_dir.name or sol_dir.name == source_stem:
+                                artifact_path = json_file
+                                break
+                        # If still not found, take first match (less ideal)
+                        if not artifact_path and json_file.exists():
+                            artifact_path = json_file
         
         if not artifact_path or not artifact_path.exists():
-            raise FileNotFoundError(f"Artifact not found for {contract_name}. Run 'forge build' first.")
+            raise FileNotFoundError(f"Artifact not found for {contract_name} in {self.contract_path}. Run 'forge build' first.")
         
         with open(artifact_path, 'r') as f:
             artifact = json.load(f)
+        
+        # Validate that artifact contract name matches expected contract name
+        artifact_contract_name = artifact.get('contractName', '')
+        if artifact_contract_name and artifact_contract_name != contract_name:
+            # This might be the wrong artifact - but continue anyway as it might be a rename
+            # The validation in extract_functions will catch if functions don't match
+            pass
         
         functions = []
         for item in artifact.get('abi', []):
             if item.get('type') == 'function':
                 state_mutability = item.get('stateMutability', '')
+                inputs = item.get('inputs', [])
+                
+                # Filter out state variable getters (view functions with no inputs)
+                # These are auto-generated for public state variables
+                if state_mutability == 'view' and len(inputs) == 0:
+                    continue
+                
                 # Only include public/external functions
                 if state_mutability in ['pure', 'view', 'nonpayable', 'payable']:
                     functions.append({
                         'name': item['name'],
-                        'params': item.get('inputs', []),
-                        'returns': item.get('outputs', [])
+                        'params': inputs,
+                        'returns': item.get('outputs', []),
+                        'stateMutability': state_mutability  # Store for constraint generation
                     })
         
         return functions
@@ -137,17 +202,31 @@ class ContractAnalyzer:
         
         functions = []
         
-        # Pattern to match function definitions
-        pattern = r'function\s+(\w+)\s*\(([^)]*)\)\s*(?:public|external|internal|private)?\s*(?:pure|view|payable)?\s*(?:returns\s*\(([^)]*)\))?'
+        # Pattern to match function definitions - improved to catch more cases
+        # Matches: function name(params) [visibility] [modifiers] [returns(...)]
+        pattern = r'function\s+(\w+)\s*\(([^)]*)\)\s*(?:public|external|internal|private)?\s*(?:pure|view|payable|constant)?\s*(?:returns\s*\(([^)]*)\))?'
         
         for match in re.finditer(pattern, content):
             func_name = match.group(1)
             params_str = match.group(2).strip()
             returns_str = match.group(3).strip() if match.group(3) else ""
+            full_match = match.group(0)
             
             # Skip constructors and private/internal functions
-            if func_name == 'constructor' or 'private' in match.group(0) or 'internal' in match.group(0):
+            if func_name == 'constructor':
                 continue
+            # Only skip if explicitly marked as private/internal (not just missing public/external)
+            if 'private' in full_match or ('internal' in full_match and 'external' not in full_match and 'public' not in full_match):
+                continue
+            
+            # Extract state mutability
+            state_mutability = 'nonpayable'  # Default for public/external functions
+            if 'pure' in full_match:
+                state_mutability = 'pure'
+            elif 'view' in full_match or 'constant' in full_match:
+                state_mutability = 'view'
+            elif 'payable' in full_match:
+                state_mutability = 'payable'
             
             # Parse parameters
             params = []
@@ -168,7 +247,8 @@ class ContractAnalyzer:
             functions.append({
                 'name': func_name,
                 'params': params,
-                'returns': returns_str
+                'returns': returns_str,
+                'stateMutability': state_mutability  # Store state mutability
             })
         
         return functions
@@ -383,18 +463,232 @@ contract AutoEquivalenceTest is SymTest, Test {{
 
 """
     
+    def _extract_state_variables(self, analyzer: ContractAnalyzer) -> List[str]:
+        """Extract public state variable names from contract source code."""
+        state_vars = []
+        try:
+            # Parse source code directly to avoid artifact conflicts
+            with open(analyzer.contract_path, 'r') as f:
+                content = f.read()
+            
+            # Find the contract definition
+            contract_name = analyzer.extract_contract_name()
+            contract_pattern = rf'contract\s+{contract_name}\s*\{{'
+            contract_match = re.search(contract_pattern, content)
+            
+            if not contract_match:
+                return []
+            
+            # Extract the contract body
+            start_pos = contract_match.end()
+            brace_count = 1
+            i = start_pos
+            while i < len(content) and brace_count > 0:
+                if content[i] == '{':
+                    brace_count += 1
+                elif content[i] == '}':
+                    brace_count -= 1
+                i += 1
+            
+            contract_body = content[start_pos:i-1]
+            
+            # First, check for struct state variables (they have a different pattern)
+            # Pattern: "Data public data;" where Data is a struct
+            struct_pattern = r'(\w+)\s+public\s+(\w+)\s*;'
+            struct_matches = re.findall(struct_pattern, contract_body)
+            for struct_type, var_name in struct_matches:
+                # Check if struct_type is defined in the contract (it's a struct, not a simple type)
+                # Look for "struct StructName {" before this declaration
+                struct_def_pattern = rf'struct\s+{struct_type}\s*\{{'
+                if re.search(struct_def_pattern, contract_body):
+                    # This is a struct state variable - we'll handle it specially
+                    # Store as tuple: (var_name, struct_type)
+                    state_vars.append((var_name, struct_type))
+            
+            # Then check for simple public state variables
+            # Examples: "uint256 public total;", "uint256 public constant CAP = 100;"
+            # Match: type [visibility] [modifiers] name [= value];
+            # But exclude ones we already found as structs
+            struct_var_names = {v[0] if isinstance(v, tuple) else None for v in state_vars}
+            pattern = r'(\w+(?:\s*\[\s*\])?)\s+(?:public|constant)\s+(?:constant\s+)?(\w+)(?:\s*=\s*[^;]+)?\s*;'
+            matches = re.findall(pattern, contract_body)
+            
+            for match in matches:
+                var_type, var_name = match
+                # Skip if it's a function (functions have parentheses)
+                if '(' not in var_name and ')' not in var_name:
+                    # Skip if we already found it as a struct
+                    if var_name in struct_var_names:
+                        continue
+                    # Skip arrays - they require index arguments for getters
+                    if '[]' in var_type or '[' in var_type:
+                        continue
+                    # Only add simple types (not structs)
+                    if 'struct' not in var_type.lower():
+                        state_vars.append(var_name)
+        except Exception as e:
+            # Fallback: try ABI if source parsing fails
+            try:
+                contract_name = analyzer.extract_contract_name()
+                out_dir = Path("out")
+                artifact_path = None
+                
+                # Use the same artifact lookup logic as _extract_from_abi
+                if out_dir.exists():
+                    source_stem = analyzer.contract_path.stem
+                    
+                    # Try: out/<source_stem>.sol/<contract_name>.json
+                    possible_dir = out_dir / f"{source_stem}.sol"
+                    if possible_dir.exists():
+                        json_file = possible_dir / f"{contract_name}.json"
+                        if json_file.exists():
+                            artifact_path = json_file
+                    
+                    # If not found, search for any directory containing the contract name
+                    if not artifact_path:
+                        # Build relative path from project root to find matching artifact
+                        try:
+                            project_root = Path.cwd()
+                            rel_path = analyzer.contract_path.relative_to(project_root)
+                            # For benchmark/01_Arithmetic_Unchecked/Original.sol
+                            # Look for out/benchmark/01_Arithmetic_Unchecked/Original.sol/Original.json
+                            artifact_dir = out_dir / rel_path.with_suffix('')
+                            if artifact_dir.exists():
+                                json_file = artifact_dir / f"{contract_name}.json"
+                                if json_file.exists():
+                                    artifact_path = json_file
+                        except:
+                            pass
+                
+                if artifact_path and artifact_path.exists():
+                    with open(artifact_path, 'r') as f:
+                        artifact = json.load(f)
+                    
+                    # Validate that artifact contract name matches expected contract name
+                    artifact_contract_name = artifact.get('contractName', '')
+                    if artifact_contract_name and artifact_contract_name != contract_name:
+                        # Wrong artifact - skip
+                        return []
+                    
+                    for item in artifact.get('abi', []):
+                        # Public state variables appear as view functions with no inputs
+                        if (item.get('type') == 'function' and 
+                            item.get('stateMutability') == 'view' and 
+                            len(item.get('inputs', [])) == 0):
+                            # This is a state variable getter
+                            state_vars.append(item['name'])
+            except:
+                pass
+        
+        return state_vars
+    
     def _generate_state_checker(self) -> str:
-        return """    /**
+        """Generate state equivalence checker based on public state variables."""
+        # Extract state variables from both contracts
+        orig_state_vars = self._extract_state_variables(self.original)
+        opt_state_vars = self._extract_state_variables(self.optimized)
+        
+        # Separate simple vars from struct vars
+        orig_simple = [v for v in orig_state_vars if isinstance(v, str)]
+        opt_simple = [v for v in opt_state_vars if isinstance(v, str)]
+        orig_structs = [v for v in orig_state_vars if isinstance(v, tuple)]
+        opt_structs = [v for v in opt_state_vars if isinstance(v, tuple)]
+        
+        # Find common simple state variables
+        common_simple = sorted(set(orig_simple) & set(opt_simple))
+        
+        # Find common struct state variables (by name)
+        orig_struct_names = {v[0]: v[1] for v in orig_structs}
+        opt_struct_names = {v[0]: v[1] for v in opt_structs}
+        common_struct_names = sorted(set(orig_struct_names.keys()) & set(opt_struct_names.keys()))
+        
+        if not common_simple and not common_struct_names:
+            return """    /**
      * @notice Verifies that both contracts have equivalent state
      */
     function assertStateEquivalence() internal {
-        // This is a placeholder - customize based on your contract's state variables
-        // Example checks:
-        // assert(original.counter() == optimized.counter());
-        // assert(original.balance() == optimized.balance());
+        // No public state variables found to check
     }
 
 """
+        
+        # Generate assertions
+        assertions = []
+        
+        # Simple state variables
+        for var_name in common_simple:
+            assertions.append(f"        assert(original.{var_name}() == optimized.{var_name}());")
+        
+        # Struct state variables - compare individual fields
+        # Note: Struct getters return tuples, so we need to destructure them
+        for var_name in common_struct_names:
+            orig_struct_type = orig_struct_names[var_name]
+            opt_struct_type = opt_struct_names[var_name]
+            
+            # Extract field names from source
+            orig_fields = self._extract_struct_fields(self.original, orig_struct_type)
+            opt_fields = self._extract_struct_fields(self.optimized, opt_struct_type)
+            
+            # Find common fields (by name) and get their order
+            common_fields = set(orig_fields.keys()) & set(opt_fields.keys())
+            
+            # Get field order from each struct
+            orig_field_order = list(orig_fields.keys())
+            opt_field_order = list(opt_fields.keys())
+            
+            # Destructure tuples and compare fields
+            # Need to declare variables first, then assign
+            # Get types for each field
+            orig_types = [orig_fields[f] for f in orig_field_order]
+            opt_types = [opt_fields[f] for f in opt_field_order]
+            
+            # Declare variables
+            orig_decls = ', '.join([f'{t} {f}' for t, f in zip(orig_types, [f'orig_{f}' for f in orig_field_order])])
+            opt_decls = ', '.join([f'{t} {f}' for t, f in zip(opt_types, [f'opt_{f}' for f in opt_field_order])])
+            
+            assertions.append(f"        ({orig_decls}) = original.{var_name}();")
+            assertions.append(f"        ({opt_decls}) = optimized.{var_name}();")
+            
+            # Compare fields by name - map original field positions to optimized positions
+            for field_name in sorted(common_fields):
+                orig_var = f'orig_{field_name}'
+                opt_var = f'opt_{field_name}'
+                assertions.append(f"        assert({orig_var} == {opt_var});")
+        
+        assertions_str = "\n".join(assertions)
+        
+        return f"""    /**
+     * @notice Verifies that both contracts have equivalent state
+     */
+    function assertStateEquivalence() internal {{
+{assertions_str}
+    }}
+
+"""
+    
+    def _extract_struct_fields(self, analyzer: ContractAnalyzer, struct_name: str) -> Dict[str, str]:
+        """Extract field names and types from a struct definition."""
+        fields = {}
+        try:
+            with open(analyzer.contract_path, 'r') as f:
+                content = f.read()
+            
+            # Find struct definition
+            struct_pattern = rf'struct\s+{struct_name}\s*\{{([^}}]+)\}}'
+            match = re.search(struct_pattern, content, re.DOTALL)
+            
+            if match:
+                struct_body = match.group(1)
+                # Extract field definitions: "type name;"
+                field_pattern = r'(\w+(?:\s*\[\s*\])?)\s+(\w+)\s*;'
+                field_matches = re.findall(field_pattern, struct_body)
+                
+                for field_type, field_name in field_matches:
+                    fields[field_name] = field_type
+        except:
+            pass
+        
+        return fields
     
     def _generate_generic_checker(self) -> str:
         return """    /**
@@ -495,8 +789,20 @@ contract AutoEquivalenceTest is SymTest, Test {{
                     # Use configurable bounds
                     # IMPORTANT: Allow values that could exceed constructor parameters (like cap)
                     # This is crucial for finding bugs where optimized versions skip validation
-                    # Multiply by 2-3x to allow testing edge cases where values exceed limits
-                    bound = 10 if self.fast_mode else self.constraint_bound * 3  # Allow values that could exceed cap
+                    # For stateful functions (nonpayable/payable), use larger bounds to find validation bugs
+                    state_mutability = orig_func.get('stateMutability', '')
+                    is_stateful = state_mutability in ['nonpayable', 'payable']
+                    
+                    if is_stateful:
+                        # For stateful functions, always allow values that could exceed common constants (e.g., CAP=100)
+                        # This is critical for finding validation bugs, even in fast mode
+                        # Use a larger bound to ensure we can find bugs where validation is skipped
+                        bound = max(self.constraint_bound * 5, 150)  # At least 150 to catch CAP=100 bugs
+                    elif self.fast_mode:
+                        bound = 10
+                    else:
+                        bound = self.constraint_bound * 3
+                    
                     constraints.append(f"vm.assume({param_name} < {bound});")
                 elif param_type == 'address':
                     constraints.append(f"vm.assume({param_name} != address(0));")

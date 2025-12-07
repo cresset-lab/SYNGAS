@@ -1,0 +1,32 @@
+[
+  {
+    "case": "01_Arithmetic_Unchecked",
+    "success": true,
+    "iterations": 2,
+    "time": 21.83
+  },
+  {
+    "case": "02_Loops_Caching",
+    "success": true,
+    "iterations": 2,
+    "time": 8.48
+  },
+  {
+    "case": "03_Data_Location",
+    "success": true,
+    "iterations": 2,
+    "time": 8.58
+  },
+  {
+    "case": "04_Storage_Packing",
+    "success": true,
+    "iterations": 2,
+    "time": 10.84
+  },
+  {
+    "case": "05_Safety_Trap",
+    "success": true,
+    "iterations": 2,
+    "time": 10.04
+  }
+]
