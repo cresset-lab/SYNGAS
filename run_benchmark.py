@@ -38,8 +38,20 @@ def run_benchmark():
         start_time = time.time()
         
         # Initialize your existing pipeline
-        # We assume the "Safety_Trap" case is EXPECTED to fail verification
-        expect_failure = "Safety" in case_name or "Trap" in case_name
+        # Cases that should FAIL verification (have bugs):
+        bug_cases = [
+            "Safety_Trap", "Reentrancy_Protection", "Access_Control",
+            "Return_Value", "Zero_Address_Check", "Overflow_Protection",
+            "Multiple_Functions", "Constructor_Params", "Bounds_Check",
+            "Time_Validation", "Complex_State", "Modifier_Chain",
+            "Arithmetic_Precision", "Enum_Validation", "Mapping_Bounds",
+            "State_Machine", "Overflow_Edge", "Inheritance_Override",
+            "Payable_Check", "Division_Precision", "Nested_Struct",
+            "Cross_Function", "Range_Validation", "String_Length",
+            "Modulo_Operation", "Array_Manipulation", "Complex_Access",
+            "Invariant_Break"
+        ]
+        expect_failure = any(bug in case_name for bug in bug_cases)
         
         pipeline = VerificationPipeline(
             str(original_path),

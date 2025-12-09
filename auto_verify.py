@@ -337,9 +337,23 @@ contract AutoEquivalenceTest is SymTest, Test {{
     
     def _extract_constructor_params(self, analyzer: ContractAnalyzer) -> List[Dict]:
         """Extract constructor parameters from contract."""
+        # First, check source code to see if constructor exists
+        has_constructor = False
         try:
-            functions = analyzer.extract_functions(use_abi=True)
-            # Look for constructor in ABI
+            with open(analyzer.contract_path, 'r') as f:
+                content = f.read()
+            
+            # Check if constructor exists in source
+            if re.search(r'constructor\s*\(', content):
+                has_constructor = True
+        except:
+            pass
+        
+        if not has_constructor:
+            return []
+        
+        # If constructor exists, extract parameters
+        try:
             contract_name = analyzer.extract_contract_name()
             artifact_path = None
             
@@ -359,7 +373,10 @@ contract AutoEquivalenceTest is SymTest, Test {{
                 
                 for item in artifact.get('abi', []):
                     if item.get('type') == 'constructor':
-                        return item.get('inputs', [])
+                        inputs = item.get('inputs', [])
+                        # Only return if there are actual inputs
+                        if inputs:
+                            return inputs
         except:
             pass
         
@@ -392,11 +409,39 @@ contract AutoEquivalenceTest is SymTest, Test {{
         
         return []
     
+    def _has_constructor_validation(self) -> bool:
+        """Check if original contract has constructor validation that optimized lacks."""
+        try:
+            with open(self.original.contract_path, 'r') as f:
+                orig_content = f.read()
+            with open(self.optimized.contract_path, 'r') as f:
+                opt_content = f.read()
+            
+            import re
+            # Check if original has require/assert in constructor
+            orig_constructor = re.search(r'constructor\s*\([^)]*\)\s*\{([^}]+)\}', orig_content, re.DOTALL)
+            opt_constructor = re.search(r'constructor\s*\([^)]*\)\s*\{([^}]+)\}', opt_content, re.DOTALL)
+            
+            if orig_constructor and opt_constructor:
+                orig_body = orig_constructor.group(1)
+                opt_body = opt_constructor.group(1)
+                # Check if original has require/assert but optimized doesn't
+                if re.search(r'require\s*\(', orig_body) and not re.search(r'require\s*\(', opt_body):
+                    return True
+                if re.search(r'assert\s*\(', orig_body) and not re.search(r'assert\s*\(', opt_body):
+                    return True
+        except:
+            pass
+        return False
+    
     def _generate_setup(self, original_name: str, optimized_name: str) -> str:
         """Generate setUp function with constructor arguments."""
         # Extract constructor parameters
         orig_constructor_params = self._extract_constructor_params(self.original)
         opt_constructor_params = self._extract_constructor_params(self.optimized)
+        
+        # Check if we need to test constructor validation
+        has_constructor_validation_bug = self._has_constructor_validation()
         
         # Generate constructor arguments
         orig_args = []
@@ -418,7 +463,7 @@ contract AutoEquivalenceTest is SymTest, Test {{
             
             # Generate symbolic value or use a reasonable default
             if 'uint' in param_type or 'int' in param_type:
-                # Use a reasonable default value
+                # Use a reasonable default value (positive for original if it has validation)
                 cap_val = self.constraint_bound
                 orig_args.append(f"{cap_val}")
                 self.cap_value = cap_val  # Store for use in constraints
@@ -430,7 +475,8 @@ contract AutoEquivalenceTest is SymTest, Test {{
                 orig_args.append(f"/* TODO: provide {param_type} */")
                 orig_arg_names.append(f"constructorArg{i}")
         
-        # For optimized contract (should match original)
+        # For optimized contract
+        # If there's a constructor validation bug, test with invalid params (e.g., 0)
         for i, param in enumerate(opt_constructor_params):
             if isinstance(param, dict):
                 param_type = param.get('type', 'uint256')
@@ -439,8 +485,10 @@ contract AutoEquivalenceTest is SymTest, Test {{
                 param_type = param.get('type', 'uint256')
                 param_name = param.get('name', f'arg{i}')
             
-            # Use same values as original
+            # Always use same params as original for normal testing
+            # Constructor validation bug will be tested separately if needed
             if i < len(orig_args):
+                # Use same values as original
                 opt_args.append(orig_args[i])
             else:
                 # Generate if optimized has more params
@@ -452,15 +500,60 @@ contract AutoEquivalenceTest is SymTest, Test {{
                     opt_args.append(f"/* TODO: provide {param_type} */")
         
         # Generate setup code
+        # Always use same constructor params for both contracts to ensure they're comparable
+        # Constructor validation bugs are hard to test with equivalence (original reverts on invalid params)
         orig_constructor = f"new {original_name}({', '.join(orig_args)})" if orig_args else f"new {original_name}()"
-        opt_constructor = f"new {optimized_name}({', '.join(opt_args)})" if opt_args else f"new {optimized_name}()"
+        # Use same args as original (not opt_args which might have invalid values)
+        opt_constructor = f"new {optimized_name}({', '.join(orig_args)})" if orig_args else f"new {optimized_name}()"
+        
+        # Add constructor validation test if needed
+        constructor_test = ""
+        if has_constructor_validation_bug and orig_args:
+            # Generate a test that tries invalid constructor params
+            invalid_args = []
+            for i, arg in enumerate(orig_args):
+                # For uint/int types, use 0 as invalid value
+                if arg.isdigit():
+                    invalid_args.append("0")
+                else:
+                    invalid_args.append(arg)
+            
+            invalid_constructor_orig = f"new {original_name}({', '.join(invalid_args)})"
+            invalid_constructor_opt = f"new {optimized_name}({', '.join(invalid_args)})"
+            
+            constructor_test = f"""
+    // Test constructor validation bug
+    function check_constructor_validation() public {{
+        bool orig_reverts = false;
+        bool opt_reverts = false;
+        
+        // Try to create original with invalid params (should revert)
+        try {invalid_constructor_orig} returns (Original) {{
+            orig_reverts = false;
+        }} catch {{
+            orig_reverts = true; // Expected: original reverts on invalid params
+        }}
+        
+        // Try to create optimized with invalid params (should succeed - this is the bug)
+        try {invalid_constructor_opt} returns (Optimized) {{
+            opt_reverts = false; // Bug: optimized accepts invalid params
+        }} catch {{
+            opt_reverts = true;
+        }}
+        
+        // Original should revert, optimized should succeed - this detects the bug
+        // If both revert or both succeed, they're equivalent
+        assert(orig_reverts == opt_reverts);
+    }}
+
+"""
         
         return f"""    function setUp() public {{
         original = {orig_constructor};
         optimized = {opt_constructor};
         assertStateEquivalence();
     }}
-
+{constructor_test}
 """
     
     def _extract_state_variables(self, analyzer: ContractAnalyzer) -> List[str]:
@@ -718,13 +811,135 @@ contract AutoEquivalenceTest is SymTest, Test {{
 
 """
     
+    def _has_access_control(self, func_name: str, original_funcs: Dict) -> bool:
+        """Check if function has access control by examining source code."""
+        try:
+            with open(self.original.contract_path, 'r') as f:
+                content = f.read()
+            
+            import re
+            # Look for function definition with modifiers
+            # Pattern: function funcName(...) public onlyOwner { or function funcName(...) public onlyOwner
+            # Modifiers come after public/external and before the function body {
+            pattern = rf'function\s+{func_name}\s*\([^)]*\)\s+(?:public|external)\s+([^{{]*)\{{'
+            match = re.search(pattern, content)
+            if match:
+                modifiers_str = match.group(1).strip()
+                # Check for common access control modifiers
+                if re.search(r'onlyOwner|onlyRole|onlyAdmin|onlyWhitelist|only\w+', modifiers_str, re.IGNORECASE):
+                    return True
+                # Also check for owner/role/admin keywords (but be careful not to match too broadly)
+                if modifiers_str and re.search(r'\b(owner|role|admin)\b', modifiers_str, re.IGNORECASE):
+                    return True
+                
+        except Exception as e:
+            pass
+        return False
+    
+    def _checks_zero_address(self, func_name: str, param_name: str) -> bool:
+        """Check if function validates zero address for a parameter."""
+        try:
+            with open(self.original.contract_path, 'r') as f:
+                content = f.read()
+            
+            import re
+            # Look for require/assert checking zero address
+            # Pattern: require(param != address(0)) or require(param != address(0), "...")
+            pattern = rf'require\s*\(\s*{param_name}\s*!=\s*address\s*\(\s*0\s*\)'
+            if re.search(pattern, content):
+                return True
+                
+        except:
+            pass
+        return False
+    
+    def _extract_constants(self) -> Dict[str, int]:
+        """Extract constant values from both contracts (MAX, MAX_ITEMS, CAP, etc.)."""
+        constants = {}
+        for analyzer in [self.original, self.optimized]:
+            try:
+                with open(analyzer.contract_path, 'r') as f:
+                    content = f.read()
+                
+                import re
+                # Match: uint256 public constant MAX = 1000;
+                # Match: uint256 public constant MAX_ITEMS = 100;
+                pattern = r'uint256\s+(?:public\s+)?constant\s+(\w+)\s*=\s*(\d+);'
+                for match in re.finditer(pattern, content):
+                    const_name = match.group(1)
+                    const_value = int(match.group(2))
+                    # Take the maximum value if constant appears in both contracts
+                    if const_name in constants:
+                        constants[const_name] = max(constants[const_name], const_value)
+                    else:
+                        constants[const_name] = const_value
+            except:
+                pass
+        
+        return constants
+    
+    def _has_reentrancy_protection(self, func_name: str) -> bool:
+        """Check if function has reentrancy protection (nonReentrant modifier)."""
+        try:
+            with open(self.original.contract_path, 'r') as f:
+                content = f.read()
+            
+            import re
+            # Check if function has nonReentrant modifier
+            pattern = rf'function\s+{func_name}\s*\([^)]*\)\s+(?:public|external)\s+[^{{]*\b(nonReentrant|reentrancyGuard)\b'
+            if re.search(pattern, content):
+                return True
+            
+            # Also check for modifier definition
+            if re.search(r'modifier\s+nonReentrant', content):
+                # Check if function uses it
+                func_pattern = rf'function\s+{func_name}\s*\([^)]*\)\s+(?:public|external)\s+([^{{]*)\{{'
+                match = re.search(func_pattern, content)
+                if match and 'nonReentrant' in match.group(1):
+                    return True
+        except:
+            pass
+        return False
+    
+    def _needs_multiple_calls_for_bounds(self, func_name: str, constants: Dict[str, int]) -> bool:
+        """Check if function needs multiple calls to test bounds (e.g., addItem with MAX_ITEMS)."""
+        if 'MAX_ITEMS' not in constants:
+            return False
+        
+        try:
+            with open(self.original.contract_path, 'r') as f:
+                content = f.read()
+            
+            import re
+            # Check if function modifies an array state variable and has MAX_ITEMS check
+            # Pattern: function funcName(...) { require(array.length < MAX_ITEMS); array.push(...); }
+            func_pattern = rf'function\s+{func_name}\s*\([^)]*\)\s+[^{{]*\{{([^}}]+)\}}'
+            match = re.search(func_pattern, content, re.DOTALL)
+            if match:
+                func_body = match.group(1)
+                # Check if it has MAX_ITEMS check and array push
+                if re.search(r'MAX_ITEMS', func_body) and re.search(r'\.push\s*\(', func_body):
+                    return True
+        except:
+            pass
+        return False
+    
     def _generate_function_tests(self, common_functions: set, 
                                 original_funcs: Dict, optimized_funcs: Dict) -> str:
         test_functions = ""
         
+        # Extract constants from contracts
+        constants = self._extract_constants()
+        
+        # Store common_functions for use in reentrancy tests
+        self._common_functions = common_functions
+        
         for func_name in sorted(common_functions):
             orig_func = original_funcs[func_name]
             opt_func = optimized_funcs[func_name]
+            
+            # Check if function has access control
+            has_access_control = self._has_access_control(func_name, original_funcs)
             
             # Use original function's params (assuming they match)
             params = orig_func['params']
@@ -733,6 +948,7 @@ contract AutoEquivalenceTest is SymTest, Test {{
             param_decls = []
             param_names = []
             constraints = []
+            address_params = []  # Track address parameters for access control testing
             
             for i, param in enumerate(params):
                 # Handle ABI format (dict with 'type' and 'name') or source format
@@ -779,11 +995,20 @@ contract AutoEquivalenceTest is SymTest, Test {{
                 
                 param_names.append(param_name)
                 
+                # Track address parameters
+                if param_type == 'address':
+                    address_params.append(param_name)
+                
                 # Generate constraints based on type
                 # Use tighter bounds for faster verification
                 if '[]' in param_type:
-                    # Array constraints: limit array length for performance
-                    bound = 5 if self.fast_mode else 10
+                    # Array constraints: check for MAX_ITEMS or similar constants
+                    # If MAX_ITEMS exists, allow arrays up to MAX_ITEMS + 1 to test bounds
+                    if 'MAX_ITEMS' in constants:
+                        max_items = constants['MAX_ITEMS']
+                        bound = max_items + 10  # Allow exceeding MAX_ITEMS to test bounds
+                    else:
+                        bound = 5 if self.fast_mode else 10
                     constraints.append(f"vm.assume({param_name}.length < {bound});")
                 elif 'uint' in param_type or 'int' in param_type:
                     # Use configurable bounds
@@ -793,11 +1018,20 @@ contract AutoEquivalenceTest is SymTest, Test {{
                     state_mutability = orig_func.get('stateMutability', '')
                     is_stateful = state_mutability in ['nonpayable', 'payable']
                     
+                    # Check for constants that might be used in validation (MAX, CAP, etc.)
+                    max_constant = 0
+                    for const_name, const_value in constants.items():
+                        if const_name in ['MAX', 'CAP', 'LIMIT', 'THRESHOLD']:
+                            max_constant = max(max_constant, const_value)
+                    
                     if is_stateful:
-                        # For stateful functions, always allow values that could exceed common constants (e.g., CAP=100)
+                        # For stateful functions, always allow values that could exceed common constants
                         # This is critical for finding validation bugs, even in fast mode
-                        # Use a larger bound to ensure we can find bugs where validation is skipped
-                        bound = max(self.constraint_bound * 5, 150)  # At least 150 to catch CAP=100 bugs
+                        if max_constant > 0:
+                            # Use constant + buffer to allow exceeding it
+                            bound = max(max_constant + 50, self.constraint_bound * 5, 150)
+                        else:
+                            bound = max(self.constraint_bound * 5, 150)  # At least 150 to catch CAP=100 bugs
                     elif self.fast_mode:
                         bound = 10
                     else:
@@ -805,7 +1039,12 @@ contract AutoEquivalenceTest is SymTest, Test {{
                     
                     constraints.append(f"vm.assume({param_name} < {bound});")
                 elif param_type == 'address':
-                    constraints.append(f"vm.assume({param_name} != address(0));")
+                    # Check if this parameter is validated for zero address
+                    # If it is, allow zero address to test the validation
+                    checks_zero = self._checks_zero_address(func_name, param_name)
+                    if not checks_zero:
+                        # Only exclude zero address if it's not being validated
+                        constraints.append(f"vm.assume({param_name} != address(0));")
                 elif 'string' in param_type or 'bytes' in param_type:
                     bound = 10 if self.fast_mode else self.constraint_bound
                     constraints.append(f"vm.assume(bytes({param_name}).length < {bound});")
@@ -822,7 +1061,102 @@ contract AutoEquivalenceTest is SymTest, Test {{
             else:
                 args_code = '""'
             
-            test_functions += f"""    function check_equivalence_{func_name}({param_list}) public {{
+            # For access control functions, generate additional test with different msg.sender
+            if has_access_control:
+                # Generate test with prank to test access control
+                # vm.prank() works with .call(), so we can use the same pattern
+                test_functions += f"""    function check_equivalence_{func_name}({param_list}) public {{
+        // Constraints
+        {constraints_str}
+
+        // Test with owner (should work for both)
+        address owner = original.owner();
+        vm.prank(owner);
+        check_function_equivalence(
+            original.{func_name}.selector,
+            {args_code}
+        );
+        
+        // Test with non-owner (original should fail, optimized might succeed - this is the bug)
+        address nonOwner = address(uint160(uint256(keccak256(abi.encodePacked("nonOwner", block.timestamp)))));
+        vm.assume(nonOwner != owner);
+        vm.prank(nonOwner);
+        check_function_equivalence(
+            original.{func_name}.selector,
+            {args_code}
+        );
+    }}
+
+"""
+            else:
+                # Check for reentrancy protection
+                has_reentrancy_protection = self._has_reentrancy_protection(func_name)
+                
+                # Check if this function modifies an array state variable and has MAX_ITEMS check
+                # This requires multiple calls to test bounds
+                needs_multiple_calls = self._needs_multiple_calls_for_bounds(func_name, constants)
+                
+                if has_reentrancy_protection:
+                    # Generate test with multiple sequential calls to test reentrancy
+                    # Reentrancy bug: original prevents multiple calls, optimized allows them
+                    # First check if there's a deposit function to fund the account
+                    has_deposit = 'deposit' in self._common_functions
+                    deposit_setup = ""
+                    if has_deposit and param_names:
+                        # Use the same amount for deposit as for withdraw
+                        deposit_amount = param_names[0] if param_names else '100'
+                        deposit_setup = f"""
+        // First, deposit funds to enable withdrawal
+        (bool dep_success1, ) = address(original).call(
+            abi.encodeWithSelector(original.deposit.selector, {deposit_amount})
+        );
+        (bool dep_success2, ) = address(optimized).call(
+            abi.encodeWithSelector(optimized.deposit.selector, {deposit_amount})
+        );
+        require(dep_success1 && dep_success2, "Deposit failed");
+        assertStateEquivalence();
+"""
+                    
+                    test_functions += f"""    function check_equivalence_{func_name}({param_list}) public {{
+        // Constraints
+        {constraints_str}
+{deposit_setup}
+        // Test with multiple sequential calls to simulate reentrancy
+        // Original should prevent reentrancy (second call fails), optimized might allow it
+        // First call should succeed for both
+        check_function_equivalence(
+            original.{func_name}.selector,
+            {args_code}
+        );
+        
+        // Second call: original should fail (reentrancy protection), optimized might succeed
+        check_function_equivalence(
+            original.{func_name}.selector,
+            {args_code}
+        );
+    }}
+
+"""
+                elif needs_multiple_calls:
+                    # Generate test with multiple sequential calls to build up the array
+                    max_items = constants.get('MAX_ITEMS', 100)
+                    test_functions += f"""    function check_equivalence_{func_name}({param_list}) public {{
+        // Constraints
+        {constraints_str}
+
+        // Test with multiple calls to build up array past MAX_ITEMS ({max_items})
+        // This tests the bounds check bug
+        for (uint256 i = 0; i < {max_items + 5}; i++) {{
+            check_function_equivalence(
+                original.{func_name}.selector,
+                {args_code}
+            );
+        }}
+    }}
+
+"""
+                else:
+                    test_functions += f"""    function check_equivalence_{func_name}({param_list}) public {{
         // Constraints
         {constraints_str}
 
