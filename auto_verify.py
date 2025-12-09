@@ -190,8 +190,41 @@ class ContractAnalyzer:
                         'name': item['name'],
                         'params': inputs,
                         'returns': item.get('outputs', []),
-                        'stateMutability': state_mutability  # Store for constraint generation
+                        'stateMutability': state_mutability,  # Store for constraint generation
+                        'is_fallback': False
                     })
+        
+        # Also check for fallback/receive functions in source (ABI doesn't always include them)
+        try:
+            with open(self.contract_path, 'r') as f:
+                content = f.read()
+            
+            # Check for receive() external payable
+            if re.search(r'receive\s*\(\s*\)\s*external\s+payable', content):
+                # Check if we already have it
+                if not any(f['name'] == 'receive' for f in functions):
+                    functions.append({
+                        'name': 'receive',
+                        'params': [],
+                        'returns': [],
+                        'stateMutability': 'payable',
+                        'is_fallback': True
+                    })
+            
+            # Check for fallback() external [payable]
+            fallback_match = re.search(r'fallback\s*\(\s*\)\s*external\s+(?:payable\s+)?', content)
+            if fallback_match:
+                if not any(f['name'] == 'fallback' for f in functions):
+                    is_payable = 'payable' in fallback_match.group(0)
+                    functions.append({
+                        'name': 'fallback',
+                        'params': [],
+                        'returns': [],
+                        'stateMutability': 'payable' if is_payable else 'nonpayable',
+                        'is_fallback': True
+                    })
+        except:
+            pass
         
         return functions
     
@@ -201,6 +234,31 @@ class ContractAnalyzer:
             content = f.read()
         
         functions = []
+        
+        # First, check for fallback and receive functions
+        # Pattern for receive() external payable
+        receive_pattern = r'receive\s*\(\s*\)\s*external\s+payable'
+        if re.search(receive_pattern, content):
+            functions.append({
+                'name': 'receive',
+                'params': [],
+                'returns': '',
+                'stateMutability': 'payable',
+                'is_fallback': True
+            })
+        
+        # Pattern for fallback() external [payable]
+        fallback_pattern = r'fallback\s*\(\s*\)\s*external\s+(?:payable\s+)?'
+        if re.search(fallback_pattern, content):
+            # Check if it's payable
+            is_payable = 'payable' in re.search(fallback_pattern, content).group(0)
+            functions.append({
+                'name': 'fallback',
+                'params': [],
+                'returns': '',
+                'stateMutability': 'payable' if is_payable else 'nonpayable',
+                'is_fallback': True
+            })
         
         # Pattern to match function definitions - improved to catch more cases
         # Matches: function name(params) [visibility] [modifiers] [returns(...)]
@@ -843,10 +901,48 @@ contract AutoEquivalenceTest is SymTest, Test {{
                 content = f.read()
             
             import re
-            # Look for require/assert checking zero address
-            # Pattern: require(param != address(0)) or require(param != address(0), "...")
-            pattern = rf'require\s*\(\s*{param_name}\s*!=\s*address\s*\(\s*0\s*\)'
+            # Find the function body
+            func_pattern = rf'function\s+{func_name}\s*\([^)]*\)[^{{]*\{{([^}}]+)\}}'
+            func_match = re.search(func_pattern, content, re.DOTALL)
+            if func_match:
+                func_body = func_match.group(1)
+                # Look for require/assert checking zero address
+                # Pattern: require(param != address(0)) or require(param != address(0), "...")
+                # Also check for variations like require(_param != address(0))
+                patterns = [
+                    rf'require\s*\(\s*{param_name}\s*!=\s*address\s*\(\s*0\s*\)',
+                    rf'require\s*\(\s*{re.escape(param_name)}\s*!=\s*address\s*\(\s*0\s*\)',
+                    rf'require\s*\(\s*[^)]*{param_name}[^)]*!=\s*address\s*\(\s*0\s*\)',
+                ]
+                for pattern in patterns:
+                    if re.search(pattern, func_body):
+                        return True
+            # Also check globally (less precise but catches more cases)
+            pattern = rf'require\s*\(\s*[^)]*{param_name}[^)]*!=\s*address\s*\(\s*0\s*\)'
             if re.search(pattern, content):
+                return True
+                
+        except:
+            pass
+        return False
+    
+    def _has_payable_value_check(self, func_name: str) -> bool:
+        """Check if payable function validates msg.value > 0."""
+        try:
+            with open(self.original.contract_path, 'r') as f:
+                content = f.read()
+            
+            import re
+            # Find the function body
+            func_pattern = rf'function\s+{func_name}\s*\([^)]*\)[^{{]*\{{([^}}]+)\}}'
+            func_match = re.search(func_pattern, content, re.DOTALL)
+            if func_match:
+                func_body = func_match.group(1)
+                # Look for require(msg.value > 0) or require(msg.value > 0, "...")
+                if re.search(r'require\s*\(\s*msg\.value\s*>\s*0', func_body):
+                    return True
+            # Also check globally
+            if re.search(rf'function\s+{func_name}.*require\s*\(\s*msg\.value\s*>\s*0', content, re.DOTALL):
                 return True
                 
         except:
@@ -1156,19 +1252,151 @@ contract AutoEquivalenceTest is SymTest, Test {{
 
 """
                 else:
-                    test_functions += f"""    function check_equivalence_{func_name}({param_list}) public {{
+                    # Check if function needs state setup (e.g., transfer needs deposit)
+                    needs_setup = self._needs_state_setup(func_name, common_functions)
+                    setup_code = ""
+                    if needs_setup:
+                        # Try to find a setup function (e.g., deposit for transfer)
+                        setup_func = self._find_setup_function(func_name, common_functions)
+                        if setup_func:
+                            # Generate setup call
+                            # For transfer, we need to deposit the amount first
+                            if func_name == 'transfer' and param_names and len(param_names) >= 2:
+                                amount_param = param_names[1]  # amount is usually second param
+                                setup_code = f"""
+        // Setup: Deposit funds to enable transfer
+        (bool setup_success1, ) = address(original).call{{
+            value: {amount_param}
+        }}(abi.encodeWithSelector(original.{setup_func}.selector));
+        (bool setup_success2, ) = address(optimized).call{{
+            value: {amount_param}
+        }}(abi.encodeWithSelector(optimized.{setup_func}.selector));
+        require(setup_success1 && setup_success2, "Setup failed");
+        assertStateEquivalence();
+"""
+                    
+                    # Handle fallback/receive functions specially
+                    is_fallback = orig_func.get('is_fallback', False)
+                    if is_fallback:
+                        # For fallback/receive, we need to send a call with value
+                        # Note: receive() only accepts calls with empty calldata, fallback() accepts any calldata
+                        if func_name == 'receive':
+                            # receive() only accepts empty calldata with value
+                            test_functions += f"""    function check_equivalence_{func_name}() public payable {{
+        // Test receive function with symbolic value
+        uint256 value = msg.value;
+        vm.assume(value < 100 ether);  // Reasonable bound
+        
+        // Call original (receive only accepts empty calldata)
+        (bool success1, bytes memory returnData1) = address(original).call{{value: value}}("");
+        
+        // Call optimized
+        (bool success2, bytes memory returnData2) = address(optimized).call{{value: value}}("");
+        
+        assert(success1 == success2);
+        
+        if (success1 && success2) {{
+            assert(keccak256(returnData1) == keccak256(returnData2));
+        }}
+        
+        assertStateEquivalence();
+    }}
+
+"""
+                        else:
+                            # fallback() accepts any calldata
+                            test_functions += f"""    function check_equivalence_{func_name}(bytes memory data) public payable {{
+        // Test fallback function with symbolic value and calldata
+        uint256 value = msg.value;
+        vm.assume(value < 100 ether);  // Reasonable bound
+        vm.assume(data.length < 100);  // Reasonable bound
+        
+        // Call original
+        (bool success1, bytes memory returnData1) = address(original).call{{value: value}}(data);
+        
+        // Call optimized
+        (bool success2, bytes memory returnData2) = address(optimized).call{{value: value}}(data);
+        
+        assert(success1 == success2);
+        
+        if (success1 && success2) {{
+            assert(keccak256(returnData1) == keccak256(returnData2));
+        }}
+        
+        assertStateEquivalence();
+    }}
+
+"""
+                    else:
+                        # Check if this is a payable function that validates msg.value > 0
+                        has_value_check = False
+                        if orig_func.get('stateMutability') == 'payable':
+                            has_value_check = self._has_payable_value_check(func_name)
+                        
+                        # For payable functions with value check, test with msg.value == 0
+                        payable_test = ""
+                        if has_value_check:
+                            # Generate a test that allows msg.value == 0 to test the bug
+                            # For payable functions, we need to use .call{value: 0} with the encoded selector
+                            if encode_args:
+                                payable_args = f", {encode_args}"
+                            else:
+                                payable_args = ""
+                            payable_test = f"""
+    function check_equivalence_{func_name}_zero_value({param_list}) public {{
         // Constraints
         {constraints_str}
+        // Test payable function with zero value (original should revert, optimized might succeed)
+        (bool success1, bytes memory returnData1) = address(original).call{{value: 0}}(
+            abi.encodePacked(original.{func_name}.selector{payable_args})
+        );
+        (bool success2, bytes memory returnData2) = address(optimized).call{{value: 0}}(
+            abi.encodePacked(optimized.{func_name}.selector{payable_args})
+        );
+        
+        // Original should revert (has validation), optimized might succeed (bug)
+        assert(success1 == success2);
+        
+        if (success1 && success2) {{
+            assert(keccak256(returnData1) == keccak256(returnData2));
+        }}
+        
+        assertStateEquivalence();
+    }}
 
+"""
+                        
+                        test_functions += f"""    function check_equivalence_{func_name}({param_list}) public {{
+        // Constraints
+        {constraints_str}
+{setup_code}
         check_function_equivalence(
             original.{func_name}.selector,
             {args_code}
         );
     }}
+{payable_test}
 
 """
         
         return test_functions
+    
+    def _needs_state_setup(self, func_name: str, common_functions: set) -> bool:
+        """Check if function needs state setup before testing."""
+        # Functions that typically need setup
+        needs_setup_patterns = ['transfer', 'withdraw', 'claim', 'redeem']
+        return any(pattern in func_name.lower() for pattern in needs_setup_patterns)
+    
+    def _find_setup_function(self, func_name: str, common_functions: set) -> str:
+        """Find a setup function for the given function (e.g., deposit for transfer)."""
+        # Common patterns: transfer -> deposit, withdraw -> deposit
+        if 'transfer' in func_name.lower():
+            if 'deposit' in common_functions:
+                return 'deposit'
+        elif 'withdraw' in func_name.lower():
+            if 'deposit' in common_functions:
+                return 'deposit'
+        return None
     
     def _generate_footer(self) -> str:
         return "}\n"

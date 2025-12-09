@@ -1,6 +1,6 @@
 # Benchmark Suite Guide
 
-This benchmark suite contains 35 test cases covering various gas optimization scenarios and potential bugs introduced during optimization.
+This benchmark suite contains 50 test cases covering various gas optimization scenarios and potential bugs introduced during optimization.
 
 ## Test Cases
 
@@ -44,6 +44,21 @@ This benchmark suite contains 35 test cases covering various gas optimization sc
 33. **33_Array_Manipulation**: Removes validation in array removal operations.
 34. **34_Complex_Access**: Removes complex access control (operator/admin).
 35. **35_Invariant_Break**: Removes validation breaking contract invariants.
+36. **36_DelegateCall_Check**: Removes self-delegatecall check, allowing storage corruption.
+37. **37_SelfDestruct_Check**: Removes balance check before selfdestruct.
+38. **38_Fallback_Function**: Removes value check in fallback function.
+39. **39_Library_Validation**: Removes validation when using library functions.
+40. **40_Rounding_Error**: Removes rounding adjustment, causing precision loss.
+41. **41_Loop_Unrolling**: Loop unrolling misses validation checks.
+42. **42_ShortCircuit_Eval**: Splits condition, losing short-circuit behavior.
+43. **43_Type_Casting**: Removes validation before unsafe type casting.
+44. **44_MultiSig_Check**: Removes multi-signature requirement check.
+45. **45_TimeLock_Validation**: Removes time lock check before withdrawal.
+46. **46_Upgrade_Authorization**: Removes zero address check in upgrade function.
+47. **47_Precision_Loss**: Changes operation order causing precision loss.
+48. **48_Bitwise_Operation**: Removes bounds check for bitwise operations.
+49. **49_Function_Selector**: Removes function selector validation.
+50. **50_Calldata_Validation**: Removes calldata length validation.
 
 ## Running the Benchmark
 

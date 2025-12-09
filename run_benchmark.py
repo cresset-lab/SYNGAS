@@ -49,7 +49,12 @@ def run_benchmark():
             "Payable_Check", "Division_Precision", "Nested_Struct",
             "Cross_Function", "Range_Validation", "String_Length",
             "Modulo_Operation", "Array_Manipulation", "Complex_Access",
-            "Invariant_Break"
+            "Invariant_Break", "DelegateCall_Check", "SelfDestruct_Check",
+            "Fallback_Function", "Library_Validation", "Rounding_Error",
+            "Loop_Unrolling", "ShortCircuit_Eval", "Type_Casting",
+            "MultiSig_Check", "TimeLock_Validation", "Upgrade_Authorization",
+            "Precision_Loss", "Bitwise_Operation", "Function_Selector",
+            "Calldata_Validation"
         ]
         expect_failure = any(bug in case_name for bug in bug_cases)
         

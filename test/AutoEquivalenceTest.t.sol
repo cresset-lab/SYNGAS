@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Auto-generated equivalence test
-// Generated: 2025-12-09 17:25:26
+// Generated: 2025-12-09 17:43:28
 pragma solidity ^0.8.20;
 
 import "halmos-cheatcodes/SymTest.sol";
 import "forge-std/Test.sol";
-import {Original} from "../benchmark/24_Overflow_Edge/Original.sol";
-import {Optimized} from "../benchmark/24_Overflow_Edge/Optimized.sol";
+import {Original} from "../benchmark/50_Calldata_Validation/Original.sol";
+import {Optimized} from "../benchmark/50_Calldata_Validation/Optimized.sol";
 
 /**
  * @title Auto-Generated Equivalence Test
@@ -26,8 +26,7 @@ contract AutoEquivalenceTest is SymTest, Test {
      * @notice Verifies that both contracts have equivalent state
      */
     function assertStateEquivalence() internal {
-        assert(original.MAX() == optimized.MAX());
-        assert(original.total() == optimized.total());
+        // No public state variables found to check
     }
 
     /**
@@ -55,24 +54,15 @@ contract AutoEquivalenceTest is SymTest, Test {
         assertStateEquivalence();
     }
 
-    function check_equivalence_add(uint256 amount) public {
+    function check_equivalence_processData(bytes memory data) public {
         // Constraints
-        vm.assume(amount < 150);
+        vm.assume(bytes(data).length < 10);
 
         check_function_equivalence(
-            original.add.selector,
-            abi.encode(amount)
+            original.processData.selector,
+            abi.encode(data)
         );
     }
 
-    function check_equivalence_subtract(uint256 amount) public {
-        // Constraints
-        vm.assume(amount < 150);
-
-        check_function_equivalence(
-            original.subtract.selector,
-            abi.encode(amount)
-        );
-    }
 
 }
