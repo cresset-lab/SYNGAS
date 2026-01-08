@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-contract Optimized {
-    function calculate(uint256 a, uint256 b) public pure returns (uint256) {
-        uint256 x = a + b;
-        return (x * x) - b;
+contract OriginalOpt {
+    address public recipient;
+    uint256 public amount;
+
+    function setRecipient(address _recipient) public {
+        require(_recipient != address(0), "Zero address not allowed");
+        recipient = _recipient;
+    }
+
+    function setAmount(uint256 _amount) public {
+        amount = _amount;
     }
 }

@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """
-LLM-Based Contract Optimization with Iterative Verification
+LLM-Based Contract Optimization with Iterative Verification (Experiment III: Slither-Guided Repair)
 
 This script:
 1. Takes an original Solidity contract
 2. Uses an LLM to generate an optimized version
-3. Verifies equivalence using Halmos
-4. If verification fails, feeds counterexamples back to the LLM
-5. Iterates until verification passes or max iterations reached
+3. Runs Slither static analysis to catch security issues (NEW)
+4. If Slither finds issues, requests LLM to fix them (up to 3 iterations)
+5. Verifies equivalence using Halmos (only after Slither is clean)
+6. If verification fails, feeds counterexamples back to the LLM
+7. Iterates until verification passes or max iterations reached
 
 Usage:
     python3 llm_optimize_verify.py <original_contract> [--max-iterations N] [--model MODEL]
     
 Example:
-    python3 llm_optimize_verify.py src/CappedDeposits.sol --max-iterations 5
+    python3 llm_optimize_verify.py benchmark/06_Reentrancy_Protection/Original.sol --max-iterations 5
 """
 
 import os
@@ -22,6 +24,7 @@ import json
 import subprocess
 import re
 import argparse
+import tempfile
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -49,6 +52,154 @@ class Colors:
     CYAN = '\033[0;36m'
     NC = '\033[0m'
 
+def run_slither_analysis(source_code: str) -> List[str]:
+    """
+    Run Slither analysis on source code and return High/Medium issues.
+    
+    Args:
+        source_code: Solidity source code as string
+        
+    Returns:
+        List of issue descriptions (e.g., ["Reentrancy in function withdraw"])
+    """
+    issues = []
+    slither_available = False
+    
+    try:
+        # Check if Slither is available
+        result = subprocess.run(['slither', '--version'], 
+                           capture_output=True, text=True, check=False, timeout=5)
+        if result.returncode == 0:
+            slither_available = True
+        else:
+            log_warning("Slither not found. Install with: pip install slither-analyzer")
+    except FileNotFoundError:
+        log_warning("Slither not found. Install with: pip install slither-analyzer")
+    except subprocess.TimeoutExpired:
+        log_warning("Slither version check timed out")
+    
+    # If Slither is not available, do a basic static check for common issues
+    if not slither_available:
+        log_info("Slither not available. Performing basic static analysis fallback...")
+        issues = _basic_static_analysis(source_code)
+        return issues
+    
+    # Create temporary file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.sol', delete=False) as tmp_file:
+        tmp_file.write(source_code)
+        tmp_path = tmp_file.name
+    
+    try:
+        # Run Slither with JSON output
+        result = subprocess.run(
+            ['slither', tmp_path, '--json', '-'],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30
+        )
+        
+        if result.returncode == 0 or result.stdout:
+            try:
+                # Parse JSON output
+                slither_output = json.loads(result.stdout)
+                
+                # Extract High and Medium severity issues
+                if 'results' in slither_output and 'detectors' in slither_output['results']:
+                    for detector in slither_output['results']['detectors']:
+                        severity = detector.get('impact', '').upper()
+                        if severity in ['HIGH', 'MEDIUM']:
+                            check = detector.get('check', 'Unknown')
+                            description = detector.get('description', '')
+                            
+                            # Extract function name if available
+                            elements = detector.get('elements', [])
+                            function_name = 'unknown'
+                            for elem in elements:
+                                if elem.get('type') == 'function':
+                                    function_name = elem.get('name', 'unknown')
+                                    break
+                            
+                            issue_text = f"{check} in function {function_name}"
+                            if description:
+                                issue_text += f": {description[:100]}"
+                            
+                            issues.append(issue_text)
+            except json.JSONDecodeError:
+                # If JSON parsing fails, try to extract from stderr or stdout
+                if result.stderr:
+                    # Look for reentrancy warnings in stderr
+                    if 'reentrancy' in result.stderr.lower() or 'Reentrancy' in result.stderr:
+                        issues.append("Reentrancy vulnerability detected")
+                elif result.stdout:
+                    # Try to parse text output
+                    lines = result.stdout.split('\n')
+                    for line in lines:
+                        if 'reentrancy' in line.lower() or 'Reentrancy' in line:
+                            issues.append("Reentrancy vulnerability detected")
+                            break
+    except subprocess.TimeoutExpired:
+        log_warning("Slither analysis timed out")
+    except Exception as e:
+        log_warning(f"Error running Slither: {e}")
+    finally:
+        # Clean up temp file
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+    
+    return issues
+
+def _basic_static_analysis(source_code: str) -> List[str]:
+    """
+    Basic static analysis fallback when Slither is not available.
+    Checks for common security issues by pattern matching.
+    """
+    issues = []
+    import re
+    
+    # Check 1: Reentrancy - look for withdraw/transfer functions without nonReentrant
+    # Pattern: function withdraw/transfer that modifies state but has no nonReentrant
+    withdraw_pattern = r'function\s+(withdraw|transfer|send|call)\s*\([^)]*\)\s+[^{]*\{'
+    has_withdraw = re.search(withdraw_pattern, source_code, re.IGNORECASE)
+    
+    if has_withdraw:
+        # Check if nonReentrant modifier is present
+        if 'nonReentrant' not in source_code and 'reentrancyGuard' not in source_code:
+            # Check if there's a modifier definition but it's not used
+            if 'modifier' in source_code and 'nonReentrant' in source_code:
+                # Modifier exists but might not be used - check function signatures
+                func_match = re.search(withdraw_pattern, source_code, re.IGNORECASE)
+                if func_match:
+                    func_start = func_match.end()
+                    func_body = source_code[func_start:func_start+200]  # Check first 200 chars
+                    if 'nonReentrant' not in func_body[:func_body.find('{')]:
+                        issues.append("Reentrancy in function withdraw: Missing nonReentrant modifier")
+            else:
+                issues.append("Reentrancy in function withdraw: Missing nonReentrant modifier")
+    
+    # Check 2: Missing access control - look for functions that should have onlyOwner
+    # This is harder to detect without context, so we'll skip it for now
+    
+    # Check 3: Missing require statements in critical functions
+    # Look for withdraw/transfer without balance checks
+    if has_withdraw:
+        # Check if there's a require for balance check
+        if 'require' in source_code:
+            # Check if require is before the state modification
+            withdraw_func = re.search(r'function\s+withdraw\s*\([^)]*\)\s+[^{]*\{([^}]+)\}', 
+                                     source_code, re.IGNORECASE | re.DOTALL)
+            if withdraw_func:
+                func_body = withdraw_func.group(1)
+                # Check if there's a require with balance check
+                if not re.search(r'require\s*\([^)]*balance', func_body, re.IGNORECASE):
+                    issues.append("Missing balance check in function withdraw")
+        else:
+            issues.append("Missing validation checks in function withdraw")
+    
+    return issues
+
 class LLMOptimizer:
     """Uses LLM to optimize Solidity contracts."""
     
@@ -63,23 +214,31 @@ class LLMOptimizer:
             self.mock_mode = False
     
     def optimize_contract(self, contract_path: str, original_code: str, 
-                         counterexamples: List[Dict] = None, iteration: int = 0) -> str:
+                         counterexamples: List[Dict] = None, iteration: int = 0,
+                         slither_feedback: List[str] = None) -> str:
         """Generate optimized contract using LLM."""
         
         if self.mock_mode:
             return self._mock_optimize(contract_path, original_code, counterexamples)
         
         # Build prompt
-        prompt = self._build_optimization_prompt(original_code, counterexamples, iteration)
+        prompt = self._build_optimization_prompt(original_code, counterexamples, iteration, slither_feedback)
         
         try:
             if HAS_OPENAI:
                 from openai import OpenAI
                 client = OpenAI(api_key=self.api_key)
+                
+                # Use aggressive system prompt for initial optimization
+                if iteration == 0 and not slither_feedback:
+                    system_prompt = """You are an AGGRESSIVE Solidity gas optimizer. Your ONLY goal is to reduce gas costs by ANY means necessary. Remove all modifiers, require statements, and safety checks that look expensive. Assume the caller is trusted. Prioritize gas reduction over everything else. Be EXTREMELY aggressive - remove reentrancy guards, access control modifiers, validation checks, and any other "safety" code that costs gas."""
+                else:
+                    system_prompt = "You are an expert Solidity optimizer who creates gas-efficient code while maintaining exact functional equivalence."
+                
                 response = client.chat.completions.create(
                     model=self.model,
                     messages=[
-                        {"role": "system", "content": "You are an expert Solidity optimizer who creates gas-efficient code while maintaining exact functional equivalence."},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.3,
@@ -109,24 +268,47 @@ class LLMOptimizer:
     
     def _build_optimization_prompt(self, original_code: str, 
                                   counterexamples: List[Dict] = None,
-                                  iteration: int = 0) -> str:
+                                  iteration: int = 0,
+                                  slither_feedback: List[str] = None) -> str:
         """Build prompt for LLM optimization."""
         
-        if iteration == 0:
-            prompt = f"""Optimize the following Solidity contract for gas efficiency while maintaining EXACT functional equivalence.
-
-Requirements:
-1. Maintain identical behavior (same reverts, same return values, same state changes)
-2. Apply gas optimizations (unchecked blocks, storage caching, loop optimizations, etc.)
-3. Keep the same function signatures and public interface
-4. Preserve all security checks and invariants
+        if slither_feedback:
+            # Slither feedback takes priority - security issues must be fixed
+            slither_issues = "\n".join([f"- {issue}" for issue in slither_feedback])
+            prompt = f"""Your code has security vulnerabilities detected by Slither static analysis. Fix these immediately.
 
 Original Contract:
 ```solidity
 {original_code}
 ```
 
-Generate the optimized version. Return ONLY the complete contract code in a code block."""
+Slither reported the following High/Medium severity issues:
+{slither_issues}
+
+CRITICAL: You must fix ALL security vulnerabilities while maintaining gas optimizations. Do NOT remove security checks like reentrancy guards, access control modifiers, or validation checks.
+
+Return ONLY the complete fixed contract code in a code block."""
+        elif iteration == 0:
+            prompt = f"""AGGRESSIVE OPTIMIZATION REQUIRED: Remove all modifiers, require statements, and safety checks that look expensive. Assume the caller is trusted. Prioritize gas reduction over everything else.
+
+Optimize the following Solidity contract for MAXIMUM gas efficiency. Be EXTREMELY aggressive:
+
+1. REMOVE all modifiers (nonReentrant, onlyOwner, etc.) - they cost gas
+2. REMOVE all require() statements that validate inputs - assume inputs are valid
+3. REMOVE all access control checks - assume caller is trusted
+4. REMOVE all reentrancy guards - they're expensive
+5. REMOVE all validation checks - they add gas costs
+6. Apply aggressive gas optimizations (unchecked blocks, storage caching, loop optimizations, etc.)
+7. Keep the same function signatures and public interface
+
+CRITICAL: Your goal is MAXIMUM gas savings. Remove EVERYTHING that costs gas, including security checks.
+
+Original Contract:
+```solidity
+{original_code}
+```
+
+Generate the AGGRESSIVELY optimized version. Return ONLY the complete contract code in a code block."""
         else:
             counterexample_text = self._format_counterexamples(counterexamples)
             prompt = f"""The previous optimization introduced a bug. Fix it while maintaining gas optimizations.
@@ -307,11 +489,11 @@ class IterativeOptimizer:
             log_info(f"Iteration {iteration + 1}/{self.max_iterations}")
             log_info(f"{'='*70}")
             
-            # Step 1: Generate optimized contract
+            # Step A: Generate optimized contract
             if iteration == 0:
-                log_info("Generating initial optimized version...")
+                log_info("Step A: Generating initial optimized version...")
             else:
-                log_info(f"Fixing optimization based on {len(counterexamples)} counterexample(s)...")
+                log_info(f"Step A: Fixing optimization based on {len(counterexamples)} counterexample(s)...")
             
             try:
                 optimized_code = self.llm.optimize_contract(
@@ -324,9 +506,53 @@ class IterativeOptimizer:
                 log_error(f"Failed to generate optimization: {e}")
                 return False
             
-            # Step 2: Save optimized contract
+            # Extract contract name for file naming
             contract_name = self._extract_contract_name(self.original_code)
             optimized_name = f"{contract_name}Opt"
+            
+            # Step B: Slither Analysis Loop (up to 3 iterations)
+            slither_iterations = 0
+            max_slither_iterations = 3
+            slither_issues = []
+            
+            while slither_iterations < max_slither_iterations:
+                log_info(f"\nStep B.{slither_iterations + 1}: Running Slither analysis...")
+                
+                # Run Slither on the optimized code
+                slither_issues = run_slither_analysis(optimized_code)
+                
+                # Log what was found
+                log_info(f"Slither analysis completed. Found {len(slither_issues)} issue(s).")
+                
+                if not slither_issues:
+                    log_success("✓ Slither analysis passed - no High/Medium issues found")
+                    break
+                
+                log_warning(f"⚠ Slither found {len(slither_issues)} High/Medium issue(s):")
+                for issue in slither_issues:
+                    log_warning(f"  - {issue}")
+                
+                if slither_iterations < max_slither_iterations - 1:
+                    log_info("Requesting LLM to fix security vulnerabilities...")
+                    
+                    try:
+                        # Get LLM to fix the issues
+                        optimized_code = self.llm.optimize_contract(
+                            str(self.original_path),
+                            self.original_code,
+                            counterexamples,
+                            iteration,
+                            slither_feedback=slither_issues
+                        )
+                        slither_iterations += 1
+                    except Exception as e:
+                        log_error(f"Failed to fix Slither issues: {e}")
+                        break
+                else:
+                    log_warning("Max Slither repair iterations reached. Proceeding to Halmos verification...")
+                    break
+            
+            # Save optimized contract (after Slither fixes)
             optimized_path = self.output_dir / f"{optimized_name}_iter{iteration + 1}.sol"
             
             # Update contract name in code
@@ -341,7 +567,7 @@ class IterativeOptimizer:
             
             log_success(f"Optimized contract saved: {optimized_path}")
             
-            # Step 3: Verify equivalence
+            # Step C: Halmos Verification (only after Slither is clean)
             log_info("Running equivalence verification...")
             pipeline = VerificationPipeline(
                 str(self.original_path),

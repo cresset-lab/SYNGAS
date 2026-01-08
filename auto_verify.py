@@ -978,21 +978,86 @@ contract AutoEquivalenceTest is SymTest, Test {{
         """Check if function has reentrancy protection (nonReentrant modifier)."""
         try:
             with open(self.original.contract_path, 'r') as f:
-                content = f.read()
+                orig_content = f.read()
+            
+            # Check if optimized version lacks the protection
+            with open(self.optimized.contract_path, 'r') as f:
+                opt_content = f.read()
             
             import re
-            # Check if function has nonReentrant modifier
-            pattern = rf'function\s+{func_name}\s*\([^)]*\)\s+(?:public|external)\s+[^{{]*\b(nonReentrant|reentrancyGuard)\b'
-            if re.search(pattern, content):
-                return True
+            # Check if original has nonReentrant modifier
+            orig_has_protection = False
             
-            # Also check for modifier definition
-            if re.search(r'modifier\s+nonReentrant', content):
+            # Pattern 1: function name(...) public nonReentrant
+            pattern1 = rf'function\s+{func_name}\s*\([^)]*\)\s+(?:public|external)\s+[^{{]*\b(nonReentrant|reentrancyGuard)\b'
+            if re.search(pattern1, orig_content):
+                orig_has_protection = True
+            
+            # Pattern 2: Check for modifier definition and usage
+            if re.search(r'modifier\s+nonReentrant', orig_content):
                 # Check if function uses it
                 func_pattern = rf'function\s+{func_name}\s*\([^)]*\)\s+(?:public|external)\s+([^{{]*)\{{'
-                match = re.search(func_pattern, content)
+                match = re.search(func_pattern, orig_content)
                 if match and 'nonReentrant' in match.group(1):
+                    orig_has_protection = True
+            
+            # Check if optimized lacks protection
+            opt_has_protection = False
+            pattern1_opt = rf'function\s+{func_name}\s*\([^)]*\)\s+(?:public|external)\s+[^{{]*\b(nonReentrant|reentrancyGuard)\b'
+            if re.search(pattern1_opt, opt_content):
+                opt_has_protection = True
+            
+            if re.search(r'modifier\s+nonReentrant', opt_content):
+                func_pattern_opt = rf'function\s+{func_name}\s*\([^)]*\)\s+(?:public|external)\s+([^{{]*)\{{'
+                match_opt = re.search(func_pattern_opt, opt_content)
+                if match_opt and 'nonReentrant' in match_opt.group(1):
+                    opt_has_protection = True
+            
+            # Return true if original has protection but optimized doesn't (potential bug)
+            return orig_has_protection and not opt_has_protection
+        except:
+            pass
+        return False
+    
+    def _has_arithmetic_precision_risk(self, func_name: str) -> bool:
+        """Check if function has arithmetic operations that could cause precision loss."""
+        try:
+            with open(self.original.contract_path, 'r') as f:
+                orig_content = f.read()
+            with open(self.optimized.contract_path, 'r') as f:
+                opt_content = f.read()
+            
+            import re
+            # Find function body in both contracts
+            orig_pattern = rf'function\s+{func_name}\s*\([^)]*\)\s+[^{{]*\{{([^}}]+)\}}'
+            opt_pattern = rf'function\s+{func_name}\s*\([^)]*\)\s+[^{{]*\{{([^}}]+)\}}'
+            
+            orig_match = re.search(orig_pattern, orig_content, re.DOTALL)
+            opt_match = re.search(opt_pattern, opt_content, re.DOTALL)
+            
+            if not orig_match or not opt_match:
+                return False
+            
+            orig_body = orig_match.group(1)
+            opt_body = opt_match.group(1)
+            
+            # Check for division before multiplication in optimized (precision loss)
+            # Pattern: (var / divisor) * multiplier
+            precision_loss_pattern = r'\([^)]*\s*/\s*[^)]+\)\s*\*'
+            if re.search(precision_loss_pattern, opt_body):
+                # Check if original does multiplication first
+                precision_preserve_pattern = r'\([^)]*\s*\*\s*[^)]+\)\s*/'
+                if re.search(precision_preserve_pattern, orig_body):
                     return True
+            
+            # Check for division operations that could lose precision
+            # Look for patterns like: value / divisor (without proper rounding)
+            if re.search(r'/\s*\w+', opt_body) and not re.search(r'rounding|round|precision', opt_body, re.IGNORECASE):
+                # Check if original has rounding logic
+                if re.search(r'rounding|round|precision|count\s*/\s*2', orig_body, re.IGNORECASE):
+                    return True
+            
+            return False
         except:
             pass
         return False
@@ -1202,12 +1267,12 @@ contract AutoEquivalenceTest is SymTest, Test {{
                         # Use the same amount for deposit as for withdraw
                         deposit_amount = param_names[0] if param_names else '100'
                         deposit_setup = f"""
-        // First, deposit funds to enable withdrawal
+        // First, deposit funds to enable withdrawal (need 2x for reentrancy test)
         (bool dep_success1, ) = address(original).call(
-            abi.encodeWithSelector(original.deposit.selector, {deposit_amount})
+            abi.encodeWithSelector(original.deposit.selector, {deposit_amount} * 2)
         );
         (bool dep_success2, ) = address(optimized).call(
-            abi.encodeWithSelector(optimized.deposit.selector, {deposit_amount})
+            abi.encodeWithSelector(optimized.deposit.selector, {deposit_amount} * 2)
         );
         require(dep_success1 && dep_success2, "Deposit failed");
         assertStateEquivalence();
@@ -1217,19 +1282,40 @@ contract AutoEquivalenceTest is SymTest, Test {{
         // Constraints
         {constraints_str}
 {deposit_setup}
-        // Test with multiple sequential calls to simulate reentrancy
-        // Original should prevent reentrancy (second call fails), optimized might allow it
+        // Test reentrancy: Original has protection, optimized doesn't
         // First call should succeed for both
-        check_function_equivalence(
-            original.{func_name}.selector,
-            {args_code}
+        (bool success1_1, bytes memory returnData1_1) = address(original).call(
+            abi.encodePacked(original.{func_name}.selector, {args_code})
+        );
+        (bool success2_1, bytes memory returnData2_1) = address(optimized).call(
+            abi.encodePacked(optimized.{func_name}.selector, {args_code})
         );
         
+        // Both first calls should succeed
+        assert(success1_1 == success2_1);
+        if (success1_1 && success2_1) {{
+            assert(keccak256(returnData1_1) == keccak256(returnData2_1));
+        }}
+        assertStateEquivalence();
+        
         // Second call: original should fail (reentrancy protection), optimized might succeed
-        check_function_equivalence(
-            original.{func_name}.selector,
-            {args_code}
+        (bool success1_2, bytes memory returnData1_2) = address(original).call(
+            abi.encodePacked(original.{func_name}.selector, {args_code})
         );
+        (bool success2_2, bytes memory returnData2_2) = address(optimized).call(
+            abi.encodePacked(optimized.{func_name}.selector, {args_code})
+        );
+        
+        // Original should revert on second call (reentrancy protection)
+        // Optimized might succeed (this is the bug)
+        // If optimized also reverts, they're equivalent (no bug)
+        // If optimized succeeds but original reverts, that's the bug
+        assert(success1_2 == success2_2);
+        
+        if (success1_2 && success2_2) {{
+            assert(keccak256(returnData1_2) == keccak256(returnData2_2));
+        }}
+        assertStateEquivalence();
     }}
 
 """
@@ -1252,8 +1338,69 @@ contract AutoEquivalenceTest is SymTest, Test {{
 
 """
                 else:
-                    # Check if function needs state setup (e.g., transfer needs deposit)
-                    needs_setup = self._needs_state_setup(func_name, common_functions)
+                    # Check for arithmetic precision loss
+                    has_precision_risk = self._has_arithmetic_precision_risk(func_name)
+                    
+                    if has_precision_risk:
+                        # Generate test with stricter constraints to expose precision loss
+                        # Precision loss occurs when division happens before multiplication
+                        # We need to test with values that don't divide evenly
+                        # For example: (value / 1000) * 100 vs (value * 100) / 1000
+                        # With value=1234: 1234/1000*100 = 1*100 = 100 vs 1234*100/1000 = 123
+                        # Add constraint to ensure value doesn't divide evenly by common divisors
+                        precision_constraints = constraints_str
+                        if param_names:
+                            # Find the first uint parameter (usually the value parameter)
+                            value_param = None
+                            for i, pname in enumerate(param_names):
+                                # Check if this parameter is a uint type
+                                param = params[i] if i < len(params) else {}
+                                param_type = param.get('type', '') if isinstance(param, dict) else str(param)
+                                if 'uint' in param_type or 'int' in param_type:
+                                    value_param = pname
+                                    break
+                            
+                            if value_param:
+                                # Add constraint to test values that would expose precision loss
+                                # Use values that don't divide evenly by common divisors (10, 100, 1000)
+                                # This ensures we test cases where precision loss would be visible
+                                precision_constraints += f"""
+        // Stricter constraint for precision loss detection
+        // Test with values that don't divide evenly to expose precision differences
+        // Example: value=1234 -> (1234/1000)*100=100 vs (1234*100)/1000=123
+        vm.assume({value_param} > 0);
+        vm.assume({value_param} < type(uint256).max / 1000);  // Prevent overflow
+        // Ensure value doesn't divide evenly by 1000 to expose precision loss
+        vm.assume({value_param} % 1000 != 0);
+"""
+                        
+                        test_functions += f"""    function check_equivalence_{func_name}({param_list}) public {{
+        // Constraints with precision loss detection
+        {precision_constraints}
+
+        // Call both functions and compare state (precision loss affects state, not return values)
+        (bool success1, bytes memory returnData1) = address(original).call(
+            abi.encodePacked(original.{func_name}.selector, {args_code})
+        );
+        (bool success2, bytes memory returnData2) = address(optimized).call(
+            abi.encodePacked(optimized.{func_name}.selector, {args_code})
+        );
+        
+        assert(success1 == success2);
+        
+        if (success1 && success2) {{
+            assert(keccak256(returnData1) == keccak256(returnData2));
+        }}
+        
+        // Critical: Compare state after function execution
+        // Precision loss bugs affect state variables, not return values
+        assertStateEquivalence();
+    }}
+
+"""
+                    else:
+                        # Check if function needs state setup (e.g., transfer needs deposit)
+                        needs_setup = self._needs_state_setup(func_name, common_functions)
                     setup_code = ""
                     if needs_setup:
                         # Try to find a setup function (e.g., deposit for transfer)

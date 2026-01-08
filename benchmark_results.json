@@ -4,21 +4,21 @@
     "verification_passed": true,
     "expected_pass": true,
     "benchmark_result": "PASS",
-    "time": 3.66
+    "time": 3.94
   },
   {
     "case": "02_Loops_Caching",
     "verification_passed": true,
     "expected_pass": true,
     "benchmark_result": "PASS",
-    "time": 3.66
+    "time": 3.69
   },
   {
     "case": "03_Data_Location",
     "verification_passed": true,
     "expected_pass": true,
     "benchmark_result": "PASS",
-    "time": 3.77
+    "time": 3.69
   },
   {
     "case": "04_Storage_Packing",
@@ -39,14 +39,14 @@
     "verification_passed": true,
     "expected_pass": false,
     "benchmark_result": "FAIL",
-    "time": 3.66
+    "time": 3.79
   },
   {
     "case": "07_Access_Control",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.83
+    "time": 3.86
   },
   {
     "case": "08_Event_Emission",
@@ -60,84 +60,84 @@
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.93
+    "time": 3.96
   },
   {
     "case": "10_Zero_Address_Check",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.71
+    "time": 3.95
   },
   {
     "case": "11_Overflow_Protection",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.74
+    "time": 3.82
   },
   {
     "case": "12_Multiple_Functions",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.79
+    "time": 3.96
   },
   {
     "case": "13_Constructor_Params",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.83
+    "time": 3.99
   },
   {
     "case": "14_State_Ordering",
     "verification_passed": true,
     "expected_pass": true,
     "benchmark_result": "PASS",
-    "time": 3.73
+    "time": 3.95
   },
   {
     "case": "15_Bounds_Check",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 14.29
+    "time": 14.42
   },
   {
     "case": "16_Time_Validation",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.81
+    "time": 3.83
   },
   {
     "case": "17_Complex_State",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 0.81
+    "time": 0.87
   },
   {
     "case": "18_Storage_Collision",
     "verification_passed": true,
     "expected_pass": true,
     "benchmark_result": "PASS",
-    "time": 4.04
+    "time": 4.25
   },
   {
     "case": "19_Modifier_Chain",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 4.11
+    "time": 4.13
   },
   {
     "case": "20_Arithmetic_Precision",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.73
+    "time": 3.79
   },
   {
     "case": "21_Enum_Validation",
@@ -151,7 +151,7 @@
     "verification_passed": true,
     "expected_pass": false,
     "benchmark_result": "FAIL",
-    "time": 3.86
+    "time": 3.75
   },
   {
     "case": "23_State_Machine",
@@ -165,7 +165,7 @@
     "verification_passed": true,
     "expected_pass": false,
     "benchmark_result": "FAIL",
-    "time": 4.0
+    "time": 4.01
   },
   {
     "case": "25_Inheritance_Override",
@@ -179,77 +179,77 @@
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.95
+    "time": 3.94
   },
   {
     "case": "27_Division_Precision",
     "verification_passed": true,
     "expected_pass": false,
     "benchmark_result": "FAIL",
-    "time": 3.83
+    "time": 3.79
   },
   {
     "case": "28_Nested_Struct",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.74
+    "time": 3.8
   },
   {
     "case": "29_Cross_Function",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.76
+    "time": 3.75
   },
   {
     "case": "30_Range_Validation",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.83
+    "time": 3.84
   },
   {
     "case": "31_String_Length",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 0.87
+    "time": 0.8
   },
   {
     "case": "32_Modulo_Operation",
     "verification_passed": true,
     "expected_pass": false,
     "benchmark_result": "FAIL",
-    "time": 3.97
+    "time": 3.96
   },
   {
     "case": "33_Array_Manipulation",
     "verification_passed": true,
     "expected_pass": false,
     "benchmark_result": "FAIL",
-    "time": 3.7
+    "time": 3.68
   },
   {
     "case": "34_Complex_Access",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 0.81
+    "time": 0.8
   },
   {
     "case": "35_Invariant_Break",
     "verification_passed": true,
     "expected_pass": false,
     "benchmark_result": "FAIL",
-    "time": 4.05
+    "time": 4.02
   },
   {
     "case": "36_DelegateCall_Check",
     "verification_passed": true,
     "expected_pass": false,
     "benchmark_result": "FAIL",
-    "time": 3.76
+    "time": 3.74
   },
   {
     "case": "37_SelfDestruct_Check",
@@ -263,77 +263,77 @@
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 4.07
+    "time": 4.05
   },
   {
     "case": "39_Library_Validation",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.73
+    "time": 3.76
   },
   {
     "case": "40_Rounding_Error",
-    "verification_passed": true,
-    "expected_pass": false,
-    "benchmark_result": "FAIL",
-    "time": 3.71
-  },
-  {
-    "case": "41_Loop_Unrolling",
-    "verification_passed": false,
-    "expected_pass": false,
-    "benchmark_result": "PASS",
-    "time": 0.57
-  },
-  {
-    "case": "42_ShortCircuit_Eval",
-    "verification_passed": true,
-    "expected_pass": false,
-    "benchmark_result": "FAIL",
-    "time": 3.79
-  },
-  {
-    "case": "43_Type_Casting",
-    "verification_passed": true,
-    "expected_pass": false,
-    "benchmark_result": "FAIL",
-    "time": 3.74
-  },
-  {
-    "case": "44_MultiSig_Check",
-    "verification_passed": false,
-    "expected_pass": false,
-    "benchmark_result": "PASS",
-    "time": 0.58
-  },
-  {
-    "case": "45_TimeLock_Validation",
-    "verification_passed": true,
-    "expected_pass": false,
-    "benchmark_result": "FAIL",
-    "time": 3.74
-  },
-  {
-    "case": "46_Upgrade_Authorization",
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
     "time": 0.8
   },
   {
-    "case": "47_Precision_Loss",
+    "case": "41_Loop_Unrolling",
+    "verification_passed": false,
+    "expected_pass": false,
+    "benchmark_result": "PASS",
+    "time": 0.87
+  },
+  {
+    "case": "42_ShortCircuit_Eval",
     "verification_passed": true,
     "expected_pass": false,
     "benchmark_result": "FAIL",
-    "time": 4.18
+    "time": 3.86
+  },
+  {
+    "case": "43_Type_Casting",
+    "verification_passed": true,
+    "expected_pass": false,
+    "benchmark_result": "FAIL",
+    "time": 3.66
+  },
+  {
+    "case": "44_MultiSig_Check",
+    "verification_passed": false,
+    "expected_pass": false,
+    "benchmark_result": "PASS",
+    "time": 0.57
+  },
+  {
+    "case": "45_TimeLock_Validation",
+    "verification_passed": true,
+    "expected_pass": false,
+    "benchmark_result": "FAIL",
+    "time": 3.77
+  },
+  {
+    "case": "46_Upgrade_Authorization",
+    "verification_passed": false,
+    "expected_pass": false,
+    "benchmark_result": "PASS",
+    "time": 0.81
+  },
+  {
+    "case": "47_Precision_Loss",
+    "verification_passed": false,
+    "expected_pass": false,
+    "benchmark_result": "PASS",
+    "time": 0.55
   },
   {
     "case": "48_Bitwise_Operation",
     "verification_passed": true,
     "expected_pass": false,
     "benchmark_result": "FAIL",
-    "time": 3.67
+    "time": 3.96
   },
   {
     "case": "49_Function_Selector",
@@ -347,6 +347,6 @@
     "verification_passed": false,
     "expected_pass": false,
     "benchmark_result": "PASS",
-    "time": 3.91
+    "time": 3.87
   }
 ]

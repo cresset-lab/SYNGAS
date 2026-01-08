@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-contract Optimized {
-    uint256 public constant CAP = 100;
-    uint256 public total;
+contract Aggressive {
+    mapping(address => uint256) public balances;
+
+    function withdraw(uint256 amount) public {
+        unchecked {
+            balances[msg.sender] -= amount;
+        }
+    }
 
     function deposit(uint256 amount) public {
-        uint256 newTotal = total + amount;
-        // Safety Check: Cannot exceed cap
-        require(newTotal <= CAP, "Exceeds cap");
-        total = newTotal;
+        unchecked {
+            balances[msg.sender] += amount;
+        }
     }
 }
