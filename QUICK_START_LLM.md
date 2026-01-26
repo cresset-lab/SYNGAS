@@ -7,28 +7,39 @@ This script automatically optimizes Solidity contracts using an LLM and iterativ
 ## Installation
 
 ```bash
-# Install OpenAI package
+# Install OpenAI package (used for Ollama's OpenAI-compatible API)
 pip install openai
 
 # Or in virtual environment
 source venv/bin/activate
 pip install openai
+
+# Install Ollama (local LLM server)
+# Visit https://ollama.ai for installation
+# Then pull a model:
+ollama pull llama3
 ```
 
 ## Setup
 
+The script uses **local LLMs only** via Ollama. No API keys needed!
+
 ```bash
-export OPENAI_API_KEY=your_api_key_here
+# Make sure Ollama is running (should auto-start)
+# Verify: curl http://localhost:11434/api/tags
 ```
 
 ## Usage
 
 ```bash
-# Basic usage
+# Basic usage (requires Ollama running)
 python3 llm_optimize_verify.py src/CappedDeposits.sol
 
 # With more iterations
 python3 llm_optimize_verify.py src/CappedDeposits.sol --max-iterations 10
+
+# With different model
+python3 llm_optimize_verify.py src/CappedDeposits.sol --model llama3.2
 ```
 
 ## How It Works
@@ -60,7 +71,7 @@ Iteration 2: LLM fixes the bug
 
 ## Mock Mode
 
-Without API key, uses simple mock optimizer (for testing).
+Without Ollama running or if `openai` package is missing, uses simple mock optimizer (for testing).
 
 ## See Also
 

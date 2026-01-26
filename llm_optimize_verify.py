@@ -12,10 +12,13 @@ This script:
 7. Iterates until verification passes or max iterations reached
 
 Usage:
-    python3 llm_optimize_verify.py <original_contract> [--max-iterations N] [--model MODEL]
+    python3 llm_optimize_verify.py <original_contract> [--max-iterations N] [--model MODEL] [--base-url URL]
     
 Example:
     python3 llm_optimize_verify.py benchmark/06_Reentrancy_Protection/Original.sol --max-iterations 5
+    
+Note: Requires Ollama running locally. Install with: https://ollama.ai
+      Pull a model first: ollama pull llama3
 """
 
 import os
@@ -35,9 +38,9 @@ from auto_verify import VerificationPipeline, ContractAnalyzer, TestGenerator, l
 import dotenv
 dotenv.load_dotenv()
 
-# Try to import OpenAI
+# Try to import OpenAI (used for both OpenAI and Ollama)
 try:
-    import openai
+    from openai import OpenAI
     HAS_OPENAI = True
 except ImportError:
     HAS_OPENAI = False
@@ -203,15 +206,19 @@ def _basic_static_analysis(source_code: str) -> List[str]:
 class LLMOptimizer:
     """Uses LLM to optimize Solidity contracts."""
     
-    def __init__(self, model: str = "gpt-4", api_key: Optional[str] = None):
+    def __init__(self, model: str = "llama3", api_key: Optional[str] = None, 
+                 base_url: Optional[str] = None):
         self.model = model
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        if not self.api_key or not HAS_OPENAI:
-            log_warning("OPENAI_API_KEY not set or openai package missing. Using mock mode.")
+        # Default to local Ollama server
+        self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        self.api_key = api_key or os.getenv("OLLAMA_API_KEY") or "ollama"  # Ollama doesn't require real key
+        
+        if not HAS_OPENAI:
+            log_warning("openai package missing. Install with: pip install openai")
             self.mock_mode = True
         else:
-            openai.api_key = self.api_key
             self.mock_mode = False
+            log_info(f"Using local LLM: {self.base_url} with model: {self.model}")
     
     def optimize_contract(self, contract_path: str, original_code: str, 
                          counterexamples: List[Dict] = None, iteration: int = 0,
@@ -226,8 +233,11 @@ class LLMOptimizer:
         
         try:
             if HAS_OPENAI:
-                from openai import OpenAI
-                client = OpenAI(api_key=self.api_key)
+                # Use local Ollama server (OpenAI-compatible API)
+                client = OpenAI(
+                    base_url=self.base_url,
+                    api_key=self.api_key
+                )
                 
                 # Use aggressive system prompt for initial optimization
                 if iteration == 0 and not slither_feedback:
@@ -458,14 +468,15 @@ class IterativeOptimizer:
     """Main class for iterative optimization and verification."""
     
     def __init__(self, original_path: str, max_iterations: int = 5, 
-                 model: str = "gpt-4", api_key: Optional[str] = None):
+                 model: str = "llama3", api_key: Optional[str] = None,
+                 base_url: Optional[str] = None):
         self.original_path = Path(original_path)
         self.max_iterations = max_iterations
         self.project_root = Path.cwd()
         self.output_dir = self.project_root / "llm_optimized"
         self.output_dir.mkdir(exist_ok=True)
         
-        self.llm = LLMOptimizer(model=model, api_key=api_key)
+        self.llm = LLMOptimizer(model=model, api_key=api_key, base_url=base_url)
         self.parser = CounterexampleParser()
         
         # Read original contract
@@ -703,14 +714,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic usage
+  # Basic usage (requires Ollama running locally)
   python3 llm_optimize_verify.py src/CappedDeposits.sol
 
-  # With custom settings
-  python3 llm_optimize_verify.py src/CappedDeposits.sol --max-iterations 10 --model gpt-4
+  # With custom model
+  python3 llm_optimize_verify.py src/CappedDeposits.sol --max-iterations 10 --model llama3.2
 
-  # Set API key via environment variable
-  export OPENAI_API_KEY=your_key_here
+  # Custom Ollama server URL
+  python3 llm_optimize_verify.py src/CappedDeposits.sol --base-url http://localhost:11434/v1
+
+  # Set base URL via environment variable
+  export OLLAMA_BASE_URL=http://localhost:11434/v1
   python3 llm_optimize_verify.py src/CappedDeposits.sol
         """
     )
@@ -729,14 +743,20 @@ Examples:
     
     parser.add_argument(
         '--model',
-        default='gpt-4',
-        help='LLM model to use (default: gpt-4)'
+        default='llama3',
+        help='Local LLM model to use (default: llama3). Make sure the model is available in Ollama.'
+    )
+    
+    parser.add_argument(
+        '--base-url',
+        default=None,
+        help='Base URL for local LLM server (default: http://localhost:11434/v1 for Ollama). Can also set OLLAMA_BASE_URL env var.'
     )
     
     parser.add_argument(
         '--api-key',
         default=None,
-        help='OpenAI API key (or set OPENAI_API_KEY env var)'
+        help='API key (optional for Ollama, defaults to "ollama"). Can set OLLAMA_API_KEY env var.'
     )
     
     args = parser.parse_args()
@@ -751,7 +771,8 @@ Examples:
         args.contract,
         max_iterations=args.max_iterations,
         model=args.model,
-        api_key=args.api_key or os.getenv("OPENAI_API_KEY")
+        api_key=args.api_key,
+        base_url=args.base_url
     )
     
     success = optimizer.run()
