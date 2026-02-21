@@ -1,4 +1,4 @@
-# hamlosOptim
+# SYNGAS
 
 LLM-based Solidity contract optimization with **Halmos** formal verification and **Slither** static analysis. The pipeline generates optimized contracts, checks them with Slither for security issues, then proves equivalence to the original using Halmos; on failure, counterexamples are fed back to the LLM for repair.
 
